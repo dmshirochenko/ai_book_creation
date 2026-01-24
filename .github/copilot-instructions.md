@@ -30,6 +30,7 @@ src/api/app.py → src/api/routes/books.py
 | [src/api/routes/books.py](src/api/routes/books.py) | `/generate`, `/status`, `/download` endpoints |
 | [src/api/routes/health.py](src/api/routes/health.py) | Health check endpoint |
 | [src/core/config.py](src/core/config.py) | Dataclasses: `BookConfig`, `LLMConfig` |
+| [src/core/prompts.py](src/core/prompts.py) | All LLM prompts for story adaptation and image generation |
 | [src/core/llm_connector.py](src/core/llm_connector.py) | `OpenRouterClient` for story simplification |
 | [src/core/text_processor.py](src/core/text_processor.py) | `TextProcessor` splits text into `BookPage` objects |
 | [src/core/pdf_generator.py](src/core/pdf_generator.py) | `PDFBookletGenerator`, `FontManager`, page imposition |
