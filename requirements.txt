@@ -1,0 +1,16 @@
+# Book Generator Dependencies
+
+# PDF Generation
+reportlab>=4.0.0
+
+# HTTP requests for OpenRouter API
+httpx>=0.25.0
+
+# Environment variable management
+python-dotenv>=1.0.0
+
+# Async support
+asyncio-throttle>=1.0.0
+
+# Type hints support
+typing-extensions>=4.8.0
