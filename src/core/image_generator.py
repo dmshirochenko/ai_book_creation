@@ -14,6 +14,11 @@ from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 
 from src.core.config import BookConfig, DEFAULT_IMAGE_MODEL
+from src.core.prompts import (
+    build_cover_image_prompt,
+    build_end_page_image_prompt,
+    build_content_page_image_prompt,
+)
 
 
 @dataclass
@@ -81,45 +86,31 @@ class ImagePromptBuilder:
             is_cover: Whether this is the cover page
             is_end: Whether this is the end page
         """
-        base_style = f"{self.style}, safe for children ages {self.target_age[0]}-{self.target_age[1]}"
-        
-        # Text overlay instructions
-        if self.text_on_image:
-            text_instruction = f'''\nIMPORTANT: Include the following text overlaid on the image in a clear, readable font suitable for children:
-"{page_text}"
-Place the text at the bottom of the image with a semi-transparent background for readability.'''
-        else:
-            text_instruction = "\nNo text or words in the image."
-        
         if is_cover:
-            if self.text_on_image:
-                prompt = f"""Create a book cover illustration for a children's book.
-Style: {base_style}
-The image should be inviting, magical, and set the tone for the story.
-Story summary: {story_context if story_context else page_text}
-
-IMPORTANT: Include the title "{self.book_title}" prominently displayed on the cover in a fun, child-friendly font."""
-            else:
-                prompt = f"""Create a book cover illustration for a children's book titled "{self.book_title}".
-Style: {base_style}
-The image should be inviting, magical, and set the tone for the story.
-Story summary: {story_context if story_context else page_text}
-No text in the image."""
-        
+            return build_cover_image_prompt(
+                style=self.style,
+                book_title=self.book_title,
+                story_summary=story_context if story_context else page_text,
+                target_age=self.target_age,
+                text_on_image=self.text_on_image
+            )
         elif is_end:
-            prompt = f"""Create a peaceful, concluding illustration for a children's book.
-Style: {base_style}
-The scene should feel calm, complete, and satisfying - like a happy ending.
-Context from the story: {story_context}{text_instruction}"""
-        
+            return build_end_page_image_prompt(
+                style=self.style,
+                story_context=story_context,
+                target_age=self.target_age,
+                text_on_image=self.text_on_image,
+                page_text=page_text
+            )
         else:
-            prompt = f"""Create an illustration for page {page_number} of a children's book.
-Style: {base_style}
-Scene to illustrate: {page_text}
-Overall story context: {story_context if story_context else self.book_title}
-The illustration should be simple, clear, and directly related to the text.{text_instruction}"""
-        
-        return prompt
+            return build_content_page_image_prompt(
+                style=self.style,
+                page_text=page_text,
+                page_number=page_number,
+                story_context=story_context if story_context else self.book_title,
+                target_age=self.target_age,
+                text_on_image=self.text_on_image
+            )
 
 
 class OpenRouterImageGenerator:

@@ -11,6 +11,7 @@ from typing import Optional
 from dataclasses import dataclass
 
 from src.core.config import LLMConfig
+from src.core.prompts import build_story_adaptation_prompt
 
 
 @dataclass
@@ -42,33 +43,12 @@ class OpenRouterClient:
         language: str
     ) -> str:
         """Build the prompt for story adaptation."""
-        return f"""You are a children's book editor specializing in books for ages {target_age_min}-{target_age_max}.
-
-Your task is to adapt the following story for young children. Follow these rules strictly:
-
-CONTENT RULES:
-1. Use simple, short sentences (5-10 words each)
-2. Use a calm, gentle, reassuring tone
-3. Avoid complex vocabulary - use words a {target_age_min}-year-old would understand
-4. Remove any scary, violent, or intense content
-5. Keep the core story but simplify it dramatically
-6. Each sentence should be standalone and easy to read aloud
-
-STRUCTURE RULES:
-1. Start with a title line (just the title, no formatting)
-2. Then provide the story as separate sentences, one per line
-3. Each line should be 1-2 simple sentences maximum
-4. Aim for 8-16 lines total (this will be an 8-16 page book)
-5. End with a satisfying, calm conclusion
-
-LANGUAGE:
-- Write in {language}
-- Use the simplest words in that language
-
-ORIGINAL STORY:
-{story}
-
-ADAPTED STORY (title on first line, then one sentence per line):"""
+        return build_story_adaptation_prompt(
+            story=story,
+            target_age_min=target_age_min,
+            target_age_max=target_age_max,
+            language=language
+        )
 
     def adapt_story(
         self,
