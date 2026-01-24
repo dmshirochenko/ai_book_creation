@@ -10,7 +10,7 @@ import json
 from typing import Optional
 from dataclasses import dataclass
 
-from config import LLMConfig
+from src.core.config import LLMConfig
 
 
 @dataclass

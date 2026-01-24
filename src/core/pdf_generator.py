@@ -22,8 +22,8 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.colors import black, white
 from reportlab.lib.utils import ImageReader
 
-from text_processor import BookContent, BookPage, PageType
-from config import BookConfig
+from src.core.text_processor import BookContent, BookPage, PageType
+from src.core.config import BookConfig
 
 
 # A4 dimensions

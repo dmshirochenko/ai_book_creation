@@ -14,3 +14,8 @@ asyncio-throttle>=1.0.0
 
 # Type hints support
 typing-extensions>=4.8.0
+
+# FastAPI and server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6

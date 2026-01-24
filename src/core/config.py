@@ -5,6 +5,9 @@ Configuration settings for the Children's Book Generator.
 from dataclasses import dataclass, field
 from typing import Optional
 import os
+
+# Default models
+DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image"
 from dotenv import load_dotenv
 
 load_dotenv()

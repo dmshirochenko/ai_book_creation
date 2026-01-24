@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 
-from config import BookConfig
+from src.core.config import BookConfig, DEFAULT_IMAGE_MODEL
 
 
 @dataclass
@@ -24,7 +24,7 @@ class ImageConfig:
     base_url: str = "https://openrouter.ai/api/v1/chat/completions"
     
     # Model settings - use a model that supports image output
-    model: str = "google/gemini-3-pro-image-preview"  # OpenRouter image-capable model
+    model: str = DEFAULT_IMAGE_MODEL  # OpenRouter image-capable model
     
     # Common settings
     image_style: str = "children's book illustration, soft watercolor style, gentle colors, simple shapes, cute and friendly"

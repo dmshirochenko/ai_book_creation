@@ -4,6 +4,7 @@ processed_ids_user_[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a
 #Adding examples and image_cache folders
 examples/
 image_cache/
+output/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
