@@ -8,6 +8,8 @@ import os
 
 # Default models
 DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image"
+DEFAULT_ANALYSIS_MODEL = "google/gemini-2.5-flash"  # Supports structured outputs
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -60,6 +62,7 @@ class LLMConfig:
     api_key: str = field(default_factory=lambda: os.getenv("OPENROUTER_API_KEY", ""))
     base_url: str = "https://openrouter.ai/api/v1"
     model: str = "anthropic/claude-3-haiku"  # Cost-effective for text adaptation
+    analysis_model: str = DEFAULT_ANALYSIS_MODEL  # Model for structured outputs (story analysis)
     max_tokens: int = 2000
     temperature: float = 0.7
     

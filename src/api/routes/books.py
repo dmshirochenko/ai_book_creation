@@ -19,7 +19,7 @@ from src.api.schemas import (
     ErrorResponse,
 )
 from src.core.config import BookConfig, LLMConfig
-from src.core.llm_connector import adapt_story_for_children
+from src.core.llm_connector import adapt_story_for_children, analyze_story_for_visuals
 from src.core.text_processor import TextProcessor, validate_book_content
 from src.core.pdf_generator import generate_both_pdfs
 
@@ -130,10 +130,27 @@ def _generate_book_task(job_id: str, request: BookGenerateRequest) -> None:
 
         # Generate images if requested
         images = None
+        visual_context = None
         if request.generate_images:
             from src.core.image_generator import ImageConfig, BookImageGenerator
 
             logger.info(f"[{job_id}] Starting image generation...")
+            jobs[job_id].progress = "Analyzing story for visual consistency..."
+
+            # Analyze story for visual context (characters, setting, etc.)
+            if llm_config.validate():
+                logger.info(f"[{job_id}] Analyzing story for visual context...")
+                visual_context, analysis_response = analyze_story_for_visuals(
+                    story=story_text,
+                    config=llm_config,
+                )
+                if analysis_response.success and not visual_context.is_empty():
+                    logger.info(f"[{job_id}] Visual context extracted: {len(visual_context.characters)} characters, setting: {visual_context.setting[:50] if visual_context.setting else 'N/A'}...")
+                else:
+                    logger.warning(f"[{job_id}] Could not extract visual context: {analysis_response.error if not analysis_response.success else 'empty response'}")
+            else:
+                logger.warning(f"[{job_id}] No API key for story analysis, skipping visual context")
+
             jobs[job_id].progress = "Generating AI illustrations..."
 
             image_config = ImageConfig(
@@ -145,7 +162,7 @@ def _generate_book_task(job_id: str, request: BookGenerateRequest) -> None:
 
             if image_config.validate():
                 logger.info(f"[{job_id}] Image config valid, model: {request.image_model}")
-                image_generator = BookImageGenerator(image_config, book_config)
+                image_generator = BookImageGenerator(image_config, book_config, visual_context)
 
                 page_data = [
                     {

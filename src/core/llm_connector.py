@@ -11,7 +11,13 @@ from typing import Optional
 from dataclasses import dataclass
 
 from src.core.config import LLMConfig
-from src.core.prompts import build_story_adaptation_prompt
+from src.core.prompts import (
+    build_story_adaptation_prompt,
+    build_story_analysis_prompt,
+    get_story_analysis_response_format,
+    parse_story_analysis_response,
+    StoryVisualContext,
+)
 
 
 @dataclass
@@ -50,24 +56,23 @@ class OpenRouterClient:
             language=language
         )
 
-    def adapt_story(
+    def _call_llm(
         self,
-        story: str,
-        target_age_min: int = 2,
-        target_age_max: int = 4,
-        language: str = "English"
+        prompt: str,
+        response_format: Optional[dict] = None,
+        model_override: Optional[str] = None
     ) -> LLMResponse:
         """
-        Adapt a story for young children using the LLM.
+        Make a call to the LLM API.
         
         Args:
-            story: The original story text
-            target_age_min: Minimum target age
-            target_age_max: Maximum target age
-            language: Target language for the book
+            prompt: The prompt to send
+            response_format: Optional response format for structured outputs
+                            (e.g., {"type": "json_schema", "json_schema": {...}})
+            model_override: Optional model to use instead of config.model
             
         Returns:
-            LLMResponse with adapted text
+            LLMResponse with the result
         """
         if not self.config.validate():
             return LLMResponse(
@@ -77,12 +82,8 @@ class OpenRouterClient:
                 error="OpenRouter API key not configured. Set OPENROUTER_API_KEY in .env file."
             )
         
-        prompt = self._build_adaptation_prompt(
-            story, target_age_min, target_age_max, language
-        )
-        
         payload = {
-            "model": self.config.model,
+            "model": model_override or self.config.model,
             "messages": [
                 {
                     "role": "user",
@@ -92,6 +93,10 @@ class OpenRouterClient:
             "max_tokens": self.config.max_tokens,
             "temperature": self.config.temperature
         }
+        
+        # Add structured outputs if specified
+        if response_format:
+            payload["response_format"] = response_format
         
         try:
             with httpx.Client(timeout=60.0) as client:
@@ -134,6 +139,58 @@ class OpenRouterClient:
                 error=f"Invalid response format: {str(e)}"
             )
 
+    def analyze_story(self, story: str) -> tuple[StoryVisualContext, LLMResponse]:
+        """
+        Analyze a story to extract visual context for consistent illustrations.
+        Uses OpenRouter Structured Outputs for guaranteed valid JSON.
+        Uses a separate model (analysis_model) that supports structured outputs.
+        
+        Args:
+            story: The story text to analyze
+            
+        Returns:
+            Tuple of (StoryVisualContext, LLMResponse)
+        """
+        prompt = build_story_analysis_prompt(story)
+        response_format = get_story_analysis_response_format()
+        
+        # Use analysis_model which supports structured outputs
+        response = self._call_llm(
+            prompt,
+            response_format=response_format,
+            model_override=self.config.analysis_model
+        )
+        
+        if response.success:
+            visual_context = parse_story_analysis_response(response.content)
+            return visual_context, response
+        else:
+            return StoryVisualContext(), response
+
+    def adapt_story(
+        self,
+        story: str,
+        target_age_min: int = 2,
+        target_age_max: int = 4,
+        language: str = "English"
+    ) -> LLMResponse:
+        """
+        Adapt a story for young children using the LLM.
+        
+        Args:
+            story: The original story text
+            target_age_min: Minimum target age
+            target_age_max: Maximum target age
+            language: Target language for the book
+            
+        Returns:
+            LLMResponse with adapted text
+        """
+        prompt = self._build_adaptation_prompt(
+            story, target_age_min, target_age_max, language
+        )
+        return self._call_llm(prompt)
+
 
 def adapt_story_for_children(
     story: str,
@@ -160,3 +217,24 @@ def adapt_story_for_children(
     
     client = OpenRouterClient(config)
     return client.adapt_story(story, target_age_min, target_age_max, language)
+
+
+def analyze_story_for_visuals(
+    story: str,
+    config: Optional[LLMConfig] = None,
+) -> tuple[StoryVisualContext, LLMResponse]:
+    """
+    Convenience function to analyze a story for visual context.
+    
+    Args:
+        story: The story text to analyze
+        config: LLM configuration (uses defaults if not provided)
+        
+    Returns:
+        Tuple of (StoryVisualContext, LLMResponse)
+    """
+    if config is None:
+        config = LLMConfig()
+    
+    client = OpenRouterClient(config)
+    return client.analyze_story(story)
