@@ -62,12 +62,67 @@ class StoryVisualContext:
 # STORY ANALYSIS PROMPT
 # =============================================================================
 
-STORY_ANALYSIS_PROMPT_TEMPLATE = """You are a children's book illustrator assistant. Analyze the following story and extract visual details that will help create consistent illustrations across all pages.
+STORY_ANALYSIS_PROMPT_TEMPLATE = """You are an expert children's book art director responsible for ensuring visual consistency across all illustrations in a picture book. Your task is to analyze a story and extract comprehensive visual details that illustrators will use to maintain character and scene consistency throughout the book.
 
-STORY TO ANALYZE:
+---
+
+## YOUR TASK
+
+Analyze the story below and extract detailed visual specifications for:
+1. **Characters** - Every character that appears, with precise visual descriptions
+2. **Setting** - The world, locations, and environments
+3. **Atmosphere** - Mood, time, weather, and emotional tone
+4. **Color Palette** - Colors that unify the book's visual identity
+
+---
+
+## EXTRACTION GUIDELINES
+
+### CHARACTERS
+For EACH character (main and supporting), provide:
+- **Physical appearance**: Species/type, body shape, size (relative to others), proportions
+- **Distinctive features**: Unique markings, colors, patterns, textures (fur/scales/skin tone)
+- **Facial characteristics**: Eye color/shape, expression tendencies, any distinctive facial features
+- **Clothing/accessories**: What they wear, items they carry, recurring objects
+- **Movement style**: How they move (bouncy, graceful, clumsy, etc.)
+- **Age indicators**: Visual cues that suggest their age
+
+Example format: "Luna the rabbit: Small white rabbit with oversized floppy ears that drag on the ground. Soft fluffy fur with a pink nose and large round blue eyes that sparkle with curiosity. Wears a tiny red scarf with yellow stars. Moves with excited little hops."
+
+### SETTING
+Describe the visual environment:
+- **Primary location(s)**: Where does most of the story happen?
+- **Architectural style**: Buildings, structures, natural formations
+- **Flora and fauna**: Plants, trees, background animals
+- **Scale and perspective**: How big is the world relative to characters?
+- **Recurring visual elements**: Objects or landmarks that appear multiple times
+
+### ATMOSPHERE
+Capture the story's mood through:
+- **Time of day**: Morning light, golden hour, night sky, etc.
+- **Season**: Spring blossoms, autumn leaves, winter snow, summer warmth
+- **Weather**: Sunny, cloudy, rainy, misty, starlit
+- **Emotional tone**: Cozy, adventurous, mysterious, joyful, peaceful
+- **Lighting quality**: Soft and diffused, bright and cheerful, warm and glowing
+
+### COLOR PALETTE
+Suggest 4-6 dominant colors that:
+- Match the story's emotional tone
+- Provide visual harmony across all pages
+- Consider the target audience (young children respond to warm, saturated colors)
+- Include both primary scene colors and accent colors
+
+---
+
+## STORY TO ANALYZE
+
 {story}
 
-Extract characters, setting, atmosphere, and color palette from this story."""
+---
+
+## OUTPUT REQUIREMENTS
+
+Provide thorough, illustration-ready descriptions. Be specific enough that different illustrators would draw the same characters. Avoid vague terms like "cute" or "nice" - instead describe exactly what makes something appear that way visually."""
 
 
 # JSON Schema for Structured Outputs (OpenRouter)
