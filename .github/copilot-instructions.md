@@ -70,6 +70,7 @@ uvicorn src.api.app:app --reload --port 8000
 4. **Image Caching**: Images cached by prompt hash in `image_cache/`. Set `use_image_cache: false` to regenerate.
 5. **Error Tolerance**: LLM/image failures log warnings but don't halt—book generates with available content.
 6. **Import Convention**: Use `from src.core.X import Y` for core modules and `from src.api.X import Y` for API modules.
+7. **Visual Consistency**: Before image generation, story is analyzed to extract `StoryVisualContext` (characters, setting, atmosphere, color palette) which is injected into all image prompts for consistent illustrations.
 
 ## Output Structure
 

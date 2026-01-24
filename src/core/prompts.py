@@ -5,6 +5,185 @@ This module centralizes all prompts sent to OpenRouter/LLMs
 for story adaptation and image generation.
 """
 
+from dataclasses import dataclass, field
+from typing import List, Optional
+import json
+import re
+
+
+# =============================================================================
+# DATA MODELS FOR STORY CONTEXT
+# =============================================================================
+
+@dataclass
+class Character:
+    """A character extracted from the story."""
+    name: str
+    description: str  # Visual description for consistent illustration
+    
+    def to_prompt_string(self) -> str:
+        """Format character for image prompt."""
+        return f"- {self.name}: {self.description}"
+
+
+@dataclass
+class StoryVisualContext:
+    """Visual context extracted from story analysis for consistent illustrations."""
+    characters: List[Character] = field(default_factory=list)
+    setting: str = ""  # Main location/environment
+    atmosphere: str = ""  # Time of day, mood, weather
+    color_palette: str = ""  # Suggested colors for consistency
+    
+    def to_prompt_section(self) -> str:
+        """Format the visual context as a section for image prompts."""
+        sections = []
+        
+        if self.characters:
+            char_lines = "\n".join(c.to_prompt_string() for c in self.characters)
+            sections.append(f"CHARACTERS (draw consistently throughout the book):\n{char_lines}")
+        
+        if self.setting:
+            sections.append(f"SETTING: {self.setting}")
+        
+        if self.atmosphere:
+            sections.append(f"ATMOSPHERE: {self.atmosphere}")
+        
+        if self.color_palette:
+            sections.append(f"COLOR PALETTE: {self.color_palette}")
+        
+        return "\n\n".join(sections) if sections else ""
+    
+    def is_empty(self) -> bool:
+        """Check if context has any meaningful data."""
+        return not (self.characters or self.setting or self.atmosphere or self.color_palette)
+
+
+# =============================================================================
+# STORY ANALYSIS PROMPT
+# =============================================================================
+
+STORY_ANALYSIS_PROMPT_TEMPLATE = """You are a children's book illustrator assistant. Analyze the following story and extract visual details that will help create consistent illustrations across all pages.
+
+STORY TO ANALYZE:
+{story}
+
+Extract characters, setting, atmosphere, and color palette from this story."""
+
+
+# JSON Schema for Structured Outputs (OpenRouter)
+STORY_ANALYSIS_JSON_SCHEMA = {
+    "name": "story_visual_context",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "characters": {
+                "type": "array",
+                "description": "List of characters in the story with visual descriptions",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Character name"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Detailed visual description: species/type, size, colors, distinctive features, typical clothing or accessories"
+                        }
+                    },
+                    "required": ["name", "description"],
+                    "additionalProperties": False
+                }
+            },
+            "setting": {
+                "type": "string",
+                "description": "Main location or environment where the story takes place (be specific about visual elements)"
+            },
+            "atmosphere": {
+                "type": "string",
+                "description": "Time of day, season, weather, overall mood (e.g., 'warm sunny afternoon, peaceful and calm')"
+            },
+            "color_palette": {
+                "type": "string",
+                "description": "Suggested color scheme that fits the story mood (e.g., 'soft pastels, warm yellows and oranges, gentle greens')"
+            }
+        },
+        "required": ["characters", "setting", "atmosphere", "color_palette"],
+        "additionalProperties": False
+    }
+}
+
+
+def build_story_analysis_prompt(story: str) -> str:
+    """
+    Build the prompt for story visual analysis.
+    
+    Args:
+        story: The story text to analyze
+        
+    Returns:
+        Formatted prompt string
+    """
+    return STORY_ANALYSIS_PROMPT_TEMPLATE.format(story=story)
+
+
+def get_story_analysis_response_format() -> dict:
+    """
+    Get the response_format parameter for structured outputs.
+    
+    Returns:
+        Dict with type and json_schema for OpenRouter API
+    """
+    return {
+        "type": "json_schema",
+        "json_schema": STORY_ANALYSIS_JSON_SCHEMA
+    }
+
+
+def parse_story_analysis_response(response_text: str) -> StoryVisualContext:
+    """
+    Parse the LLM response into a StoryVisualContext object.
+    
+    Args:
+        response_text: Raw text response from LLM (should be valid JSON with structured outputs)
+        
+    Returns:
+        StoryVisualContext with extracted data
+    """
+    try:
+        # With structured outputs, response should be valid JSON directly
+        # But we still handle potential markdown wrapping as fallback
+        text = response_text.strip()
+        
+        # Try direct JSON parse first (structured outputs)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            # Fallback: extract JSON from potential markdown wrapping
+            json_match = re.search(r'\{[\s\S]*\}', text)
+            if not json_match:
+                return StoryVisualContext()
+            data = json.loads(json_match.group())
+        
+        characters = []
+        for char_data in data.get("characters", []):
+            if isinstance(char_data, dict) and "name" in char_data and "description" in char_data:
+                characters.append(Character(
+                    name=char_data["name"],
+                    description=char_data["description"]
+                ))
+        
+        return StoryVisualContext(
+            characters=characters,
+            setting=data.get("setting", ""),
+            atmosphere=data.get("atmosphere", ""),
+            color_palette=data.get("color_palette", "")
+        )
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return StoryVisualContext()
+
+
 # =============================================================================
 # STORY ADAPTATION PROMPTS
 # =============================================================================
@@ -71,31 +250,34 @@ def build_story_adaptation_prompt(
 # Base style suffix added to all image prompts
 IMAGE_STYLE_SUFFIX = "safe for children ages {target_age_min}-{target_age_max}"
 
-# Cover page prompts
+# Cover page prompts (with visual context)
 IMAGE_COVER_WITH_TEXT_TEMPLATE = """Create a book cover illustration for a children's book.
 Style: {base_style}
 The image should be inviting, magical, and set the tone for the story.
 Story summary: {story_summary}
-
+{visual_context}
 IMPORTANT: Include the title "{book_title}" prominently displayed on the cover in a fun, child-friendly font."""
 
 IMAGE_COVER_NO_TEXT_TEMPLATE = """Create a book cover illustration for a children's book titled "{book_title}".
 Style: {base_style}
 The image should be inviting, magical, and set the tone for the story.
 Story summary: {story_summary}
+{visual_context}
 No text in the image."""
 
-# End page prompt
+# End page prompt (with visual context)
 IMAGE_END_PAGE_TEMPLATE = """Create a peaceful, concluding illustration for a children's book.
 Style: {base_style}
 The scene should feel calm, complete, and satisfying - like a happy ending.
-Context from the story: {story_context}{text_instruction}"""
+Context from the story: {story_context}
+{visual_context}{text_instruction}"""
 
-# Content page prompt
+# Content page prompt (with visual context)
 IMAGE_CONTENT_PAGE_TEMPLATE = """Create an illustration for page {page_number} of a children's book.
 Style: {base_style}
 Scene to illustrate: {page_text}
 Overall story context: {story_context}
+{visual_context}
 The illustration should be simple, clear, and directly related to the text.{text_instruction}"""
 
 # Text overlay instructions
@@ -147,7 +329,8 @@ def build_cover_image_prompt(
     book_title: str,
     story_summary: str,
     target_age: tuple[int, int],
-    text_on_image: bool = False
+    text_on_image: bool = False,
+    visual_context: Optional[StoryVisualContext] = None
 ) -> str:
     """
     Build prompt for cover page illustration.
@@ -158,23 +341,27 @@ def build_cover_image_prompt(
         story_summary: Brief summary or first page text
         target_age: Tuple of (min_age, max_age)
         text_on_image: Whether to include title text on the image
+        visual_context: Optional visual context for consistent illustrations
         
     Returns:
         Formatted prompt string
     """
     base_style = build_image_style(style, target_age[0], target_age[1])
+    visual_section = visual_context.to_prompt_section() if visual_context and not visual_context.is_empty() else ""
     
     if text_on_image:
         return IMAGE_COVER_WITH_TEXT_TEMPLATE.format(
             base_style=base_style,
             story_summary=story_summary,
-            book_title=book_title
+            book_title=book_title,
+            visual_context=visual_section
         )
     else:
         return IMAGE_COVER_NO_TEXT_TEMPLATE.format(
             base_style=base_style,
             story_summary=story_summary,
-            book_title=book_title
+            book_title=book_title,
+            visual_context=visual_section
         )
 
 
@@ -183,7 +370,8 @@ def build_end_page_image_prompt(
     story_context: str,
     target_age: tuple[int, int],
     text_on_image: bool = False,
-    page_text: str = ""
+    page_text: str = "",
+    visual_context: Optional[StoryVisualContext] = None
 ) -> str:
     """
     Build prompt for end page illustration.
@@ -194,17 +382,20 @@ def build_end_page_image_prompt(
         target_age: Tuple of (min_age, max_age)
         text_on_image: Whether to include text on the image
         page_text: Text to overlay if text_on_image is True
+        visual_context: Optional visual context for consistent illustrations
         
     Returns:
         Formatted prompt string
     """
     base_style = build_image_style(style, target_age[0], target_age[1])
     text_instruction = build_text_instruction(text_on_image, page_text)
+    visual_section = visual_context.to_prompt_section() if visual_context and not visual_context.is_empty() else ""
     
     return IMAGE_END_PAGE_TEMPLATE.format(
         base_style=base_style,
         story_context=story_context,
-        text_instruction=text_instruction
+        text_instruction=text_instruction,
+        visual_context=visual_section
     )
 
 
@@ -214,7 +405,8 @@ def build_content_page_image_prompt(
     page_number: int,
     story_context: str,
     target_age: tuple[int, int],
-    text_on_image: bool = False
+    text_on_image: bool = False,
+    visual_context: Optional[StoryVisualContext] = None
 ) -> str:
     """
     Build prompt for content page illustration.
@@ -226,17 +418,20 @@ def build_content_page_image_prompt(
         story_context: Overall story context or book title
         target_age: Tuple of (min_age, max_age)
         text_on_image: Whether to include text on the image
+        visual_context: Optional visual context for consistent illustrations
         
     Returns:
         Formatted prompt string
     """
     base_style = build_image_style(style, target_age[0], target_age[1])
     text_instruction = build_text_instruction(text_on_image, page_text)
+    visual_section = visual_context.to_prompt_section() if visual_context and not visual_context.is_empty() else ""
     
     return IMAGE_CONTENT_PAGE_TEMPLATE.format(
         base_style=base_style,
         page_text=page_text,
         page_number=page_number,
         story_context=story_context,
-        text_instruction=text_instruction
+        text_instruction=text_instruction,
+        visual_context=visual_section
     )

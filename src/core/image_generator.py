@@ -18,6 +18,7 @@ from src.core.prompts import (
     build_cover_image_prompt,
     build_end_page_image_prompt,
     build_content_page_image_prompt,
+    StoryVisualContext,
 )
 
 
@@ -60,11 +61,19 @@ class GeneratedImage:
 class ImagePromptBuilder:
     """Build effective prompts for children's book illustrations."""
     
-    def __init__(self, style: str, book_title: str, target_age: tuple = (2, 4), text_on_image: bool = False):
+    def __init__(
+        self,
+        style: str,
+        book_title: str,
+        target_age: tuple = (2, 4),
+        text_on_image: bool = False,
+        visual_context: Optional[StoryVisualContext] = None
+    ):
         self.style = style
         self.book_title = book_title
         self.target_age = target_age
         self.text_on_image = text_on_image
+        self.visual_context = visual_context
     
     def build_prompt(
         self,
@@ -92,7 +101,8 @@ class ImagePromptBuilder:
                 book_title=self.book_title,
                 story_summary=story_context if story_context else page_text,
                 target_age=self.target_age,
-                text_on_image=self.text_on_image
+                text_on_image=self.text_on_image,
+                visual_context=self.visual_context
             )
         elif is_end:
             return build_end_page_image_prompt(
@@ -100,7 +110,8 @@ class ImagePromptBuilder:
                 story_context=story_context,
                 target_age=self.target_age,
                 text_on_image=self.text_on_image,
-                page_text=page_text
+                page_text=page_text,
+                visual_context=self.visual_context
             )
         else:
             return build_content_page_image_prompt(
@@ -109,7 +120,8 @@ class ImagePromptBuilder:
                 page_number=page_number,
                 story_context=story_context if story_context else self.book_title,
                 target_age=self.target_age,
-                text_on_image=self.text_on_image
+                text_on_image=self.text_on_image,
+                visual_context=self.visual_context
             )
 
 
@@ -192,15 +204,25 @@ class BookImageGenerator:
     Handles caching and coordination of image generation.
     """
     
-    def __init__(self, config: ImageConfig, book_config: Optional[BookConfig] = None):
+    def __init__(
+        self,
+        config: ImageConfig,
+        book_config: Optional[BookConfig] = None,
+        visual_context: Optional[StoryVisualContext] = None
+    ):
         self.config = config
         self.book_config = book_config or BookConfig()
+        self.visual_context = visual_context
         self.cache_dir = Path(config.cache_dir)
         self.generator = OpenRouterImageGenerator(config)
         
         # Ensure cache directory exists
         if config.use_cache:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    def set_visual_context(self, visual_context: StoryVisualContext) -> None:
+        """Set the visual context for consistent illustrations."""
+        self.visual_context = visual_context
     
     def _get_cache_path(self, prompt: str) -> Path:
         """Generate cache file path from prompt hash."""
@@ -261,7 +283,8 @@ class BookImageGenerator:
             style=self.config.image_style,
             book_title=self.book_config.cover_title or "Story Book",
             target_age=(self.book_config.target_age_min, self.book_config.target_age_max),
-            text_on_image=self.config.text_on_image
+            text_on_image=self.config.text_on_image,
+            visual_context=self.visual_context
         )
         
         prompt = prompt_builder.build_prompt(
