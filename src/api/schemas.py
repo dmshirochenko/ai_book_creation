@@ -27,11 +27,12 @@ class BookGenerateRequest(BaseModel):
         description="OpenRouter image model to use"
     )
     image_style: str = Field(
-        "children's book illustration, soft watercolor style, gentle colors, simple shapes, cute and friendly",
+        "children's book illustration, soft watercolor style, gentle colors, simple shapes, cute and friendly, soft faded edges that blend into white background, no hard borders",
         description="Style description for generated images"
     )
     use_image_cache: bool = Field(True, description="Use cached images if available")
     text_on_image: bool = Field(False, description="Render story text directly on images")
+    background_color: Optional[str] = Field(None, description="PDF background color as hex (e.g., '#FFF8E7' for cream, '#F0F8FF' for light blue)")
 
     model_config = {
         "json_schema_extra": {

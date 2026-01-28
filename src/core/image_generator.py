@@ -33,7 +33,7 @@ class ImageConfig:
     model: str = DEFAULT_IMAGE_MODEL  # OpenRouter image-capable model
     
     # Common settings
-    image_style: str = "children's book illustration, soft watercolor style, gentle colors, simple shapes, cute and friendly"
+    image_style: str = "children's book illustration, soft watercolor style, gentle colors, simple shapes, cute and friendly, soft faded edges that blend into white background, no hard borders"
     cache_dir: str = "image_cache"
     use_cache: bool = True
     text_on_image: bool = False  # If True, ask LLM to render text on the image

@@ -33,26 +33,27 @@ class StoryVisualContext:
     setting: str = ""  # Main location/environment
     atmosphere: str = ""  # Time of day, mood, weather
     color_palette: str = ""  # Suggested colors for consistency
-    
+    background_color: str = ""  # Suggested PDF background color (hex)
+
     def to_prompt_section(self) -> str:
         """Format the visual context as a section for image prompts."""
         sections = []
-        
+
         if self.characters:
             char_lines = "\n".join(c.to_prompt_string() for c in self.characters)
             sections.append(f"CHARACTERS (draw consistently throughout the book):\n{char_lines}")
-        
+
         if self.setting:
             sections.append(f"SETTING: {self.setting}")
-        
+
         if self.atmosphere:
             sections.append(f"ATMOSPHERE: {self.atmosphere}")
-        
+
         if self.color_palette:
             sections.append(f"COLOR PALETTE: {self.color_palette}")
-        
+
         return "\n\n".join(sections) if sections else ""
-    
+
     def is_empty(self) -> bool:
         """Check if context has any meaningful data."""
         return not (self.characters or self.setting or self.atmosphere or self.color_palette)
@@ -73,6 +74,7 @@ Analyze the story below and extract detailed visual specifications for:
 2. **Setting** - The world, locations, and environments
 3. **Atmosphere** - Mood, time, weather, and emotional tone
 4. **Color Palette** - Colors that unify the book's visual identity
+5. **Background Color** - A soft, child-friendly background color for the book pages
 
 ---
 
@@ -111,6 +113,13 @@ Suggest 4-6 dominant colors that:
 - Provide visual harmony across all pages
 - Consider the target audience (young children respond to warm, saturated colors)
 - Include both primary scene colors and accent colors
+
+### BACKGROUND COLOR
+Suggest a single soft background color for the PDF pages:
+- Must be a valid hex color code (e.g., "#FFF8E7")
+- Should be very light/pale to ensure text readability
+- Should complement the story's mood (warm cream for cozy stories, light blue for calm/water themes, pale yellow for cheerful stories, etc.)
+- Avoid pure white (#FFFFFF) - pick something with subtle warmth or character
 
 ---
 
@@ -162,9 +171,13 @@ STORY_ANALYSIS_JSON_SCHEMA = {
             "color_palette": {
                 "type": "string",
                 "description": "Suggested color scheme that fits the story mood (e.g., 'soft pastels, warm yellows and oranges, gentle greens')"
+            },
+            "background_color": {
+                "type": "string",
+                "description": "A soft, light hex color for PDF page background that complements the story mood (e.g., '#FFF8E7' for warm cream, '#F0F8FF' for calm blue, '#FFFACD' for cheerful yellow)"
             }
         },
-        "required": ["characters", "setting", "atmosphere", "color_palette"],
+        "required": ["characters", "setting", "atmosphere", "color_palette", "background_color"],
         "additionalProperties": False
     }
 }
@@ -233,7 +246,8 @@ def parse_story_analysis_response(response_text: str) -> StoryVisualContext:
             characters=characters,
             setting=data.get("setting", ""),
             atmosphere=data.get("atmosphere", ""),
-            color_palette=data.get("color_palette", "")
+            color_palette=data.get("color_palette", ""),
+            background_color=data.get("background_color", "")
         )
     except (json.JSONDecodeError, KeyError, TypeError):
         return StoryVisualContext()
@@ -311,21 +325,23 @@ Style: {base_style}
 The image should be inviting, magical, and set the tone for the story.
 Story summary: {story_summary}
 {visual_context}
-IMPORTANT: Include the title "{book_title}" prominently displayed on the cover in a fun, child-friendly font."""
+IMPORTANT: Include the title "{book_title}" prominently displayed on the cover in a fun, child-friendly font.
+The image should have soft, faded edges that gently blend into a white background - like a vignette effect. Avoid hard rectangular borders."""
 
 IMAGE_COVER_NO_TEXT_TEMPLATE = """Create a book cover illustration for a children's book titled "{book_title}".
 Style: {base_style}
 The image should be inviting, magical, and set the tone for the story.
 Story summary: {story_summary}
 {visual_context}
-No text in the image."""
+The image should have soft, faded edges that gently blend into a white background - like a vignette effect. Avoid hard rectangular borders. No text in the image."""
 
 # End page prompt (with visual context)
 IMAGE_END_PAGE_TEMPLATE = """Create a peaceful, concluding illustration for a children's book.
 Style: {base_style}
 The scene should feel calm, complete, and satisfying - like a happy ending.
 Context from the story: {story_context}
-{visual_context}{text_instruction}"""
+{visual_context}
+IMPORTANT: The image should have soft, faded edges that gently blend into a white background - like a vignette effect. Avoid hard rectangular borders.{text_instruction}"""
 
 # Content page prompt (with visual context)
 IMAGE_CONTENT_PAGE_TEMPLATE = """Create an illustration for page {page_number} of a children's book.
@@ -333,13 +349,24 @@ Style: {base_style}
 Scene to illustrate: {page_text}
 Overall story context: {story_context}
 {visual_context}
-The illustration should be simple, clear, and directly related to the text.{text_instruction}"""
+The illustration should be simple, clear, and directly related to the text.
+IMPORTANT: The image should have soft, faded edges that gently blend into a white background - like a vignette effect. Avoid hard rectangular borders. This allows text to be placed below the image.{text_instruction}"""
 
 # Text overlay instructions
 TEXT_OVERLAY_INSTRUCTION_TEMPLATE = """
-IMPORTANT: Include the following text overlaid on the image in a clear, readable font suitable for children:
+TEXT ON IMAGE REQUIREMENTS:
+Include the following text directly on the illustration:
 "{page_text}"
-Place the text at the bottom of the image with a semi-transparent background for readability."""
+
+Text styling:
+- Font: Large, rounded, child-friendly font (like a storybook font)
+- Size: Very large and easy to read for young children
+- Color: Dark text (black or dark brown) with a soft white or cream glow/shadow for readability
+- Position: Bottom third of the image, centered horizontally
+- Background: Subtle light wash or soft gradient behind text area to ensure readability against the illustration
+- Style: Friendly and playful, matching children's picture book aesthetics
+
+The text must be clearly legible and an integral part of the illustration design."""
 
 NO_TEXT_INSTRUCTION = "\nNo text or words in the image."
 

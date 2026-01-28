@@ -19,7 +19,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.colors import black, white
+from reportlab.lib.colors import black, white, HexColor
 from reportlab.lib.utils import ImageReader
 
 from src.core.text_processor import BookContent, BookPage, PageType
@@ -170,13 +170,13 @@ class BookletPageOrderer:
 
 class PDFBookletGenerator:
     """Generate print-ready PDF booklets."""
-    
+
     def __init__(self, config: BookConfig, images: Optional[Dict[int, bytes]] = None):
         self.config = config
         self.font_manager = FontManager()
         self.font = self.font_manager.get_available_font(config.font_family)
         self.images = images or {}  # page_number -> image_bytes
-    
+
     def _get_image_reader(self, page_num: int) -> Optional[ImageReader]:
         """Get ImageReader for a page's image if available."""
         if page_num in self.images and self.images[page_num]:
@@ -185,7 +185,25 @@ class PDFBookletGenerator:
             except Exception:
                 return None
         return None
-    
+
+    def _draw_background(
+        self,
+        c: canvas.Canvas,
+        x_offset: float,
+        y_offset: float,
+        page_width: float,
+        page_height: float
+    ):
+        """Draw background color for a page if configured."""
+        if self.config.background_color:
+            try:
+                color = HexColor(self.config.background_color)
+                c.setFillColor(color)
+                c.rect(x_offset, y_offset, page_width, page_height, fill=True, stroke=False)
+                c.setFillColor(black)  # Reset to black for text
+            except ValueError:
+                pass  # Invalid color, skip background
+
     def _draw_page_content(
         self,
         c: canvas.Canvas,
@@ -196,12 +214,15 @@ class PDFBookletGenerator:
         page_height: float
     ):
         """Draw content for a single page within a spread."""
+        # Draw background first
+        self._draw_background(c, x_offset, y_offset, page_width, page_height)
+
         if page is None:
             return  # Leave blank
-        
+
         # Check if we have an image for this page
         image_reader = self._get_image_reader(page.page_number)
-        
+
         # Calculate text area
         text_x = x_offset + self.config.margin_left
         text_width = page_width - self.config.margin_left - self.config.margin_right
@@ -239,19 +260,26 @@ class PDFBookletGenerator:
     ):
         """Draw a page with image on top and text at bottom."""
         margin = self.config.margin_top
-        
-        # Calculate image area (top 60% of page)
-        image_area_height = (page_height - 2 * margin) * 0.60
-        text_area_height = (page_height - 2 * margin) * 0.35
-        gap = (page_height - 2 * margin) * 0.05
-        
+
+        # Calculate image area based on text_on_image setting
+        if self.config.text_on_image:
+            # Text is on image, use 90% of page for image
+            image_area_height = (page_height - 2 * margin) * 0.90
+            text_area_height = 0
+            gap = 0
+        else:
+            # Text below image, use 60% for image
+            image_area_height = (page_height - 2 * margin) * 0.60
+            text_area_height = (page_height - 2 * margin) * 0.35
+            gap = (page_height - 2 * margin) * 0.05
+
         # Image dimensions (maintain aspect ratio)
         img_width, img_height = image_reader.getSize()
         aspect_ratio = img_width / img_height
-        
+
         # Fit image within available space
         available_width = page_width - 2 * margin
-        
+
         if aspect_ratio > (available_width / image_area_height):
             # Width-constrained
             draw_width = available_width
@@ -260,11 +288,15 @@ class PDFBookletGenerator:
             # Height-constrained
             draw_height = image_area_height
             draw_width = draw_height * aspect_ratio
-        
-        # Center image horizontally
+
+        # Center image horizontally and vertically when text_on_image
         img_x = x_offset + (page_width - draw_width) / 2
-        img_y = y_offset + margin + text_area_height + gap
-        
+        if self.config.text_on_image:
+            # Center vertically
+            img_y = y_offset + (page_height - draw_height) / 2
+        else:
+            img_y = y_offset + margin + text_area_height + gap
+
         # Draw image
         c.drawImage(
             image_reader,
@@ -274,10 +306,14 @@ class PDFBookletGenerator:
             preserveAspectRatio=True,
             anchor='sw'
         )
-        
+
+        # Skip text if it's already rendered on the image
+        if self.config.text_on_image:
+            return
+
         # Draw text below image
         text_y = y_offset + margin + text_area_height / 2
-        
+
         if page.page_type == PageType.COVER:
             c.setFont(self.font, self.config.title_font_size)
             title_lines = self._wrap_text(
@@ -289,11 +325,11 @@ class PDFBookletGenerator:
             start_y = text_y + total_height / 2
             for i, line in enumerate(title_lines):
                 c.drawCentredString(text_center_x, start_y - (i * line_height), line)
-        
+
         elif page.page_type == PageType.END:
             c.setFont(self.font, self.config.title_font_size)
             c.drawCentredString(text_center_x, text_y, page.content)
-        
+
         elif page.page_type == PageType.CONTENT:
             c.setFont(self.font, self.config.font_size)
             lines = self._wrap_text(
@@ -487,17 +523,17 @@ def generate_booklet_pdf(
 
 class PDFSequentialGenerator:
     """Generate normal sequential PDF for review (A5 portrait, one page per sheet)."""
-    
+
     # A5 dimensions in points (portrait)
     A5_WIDTH = A4_HEIGHT / 2  # 420.94 points
     A5_HEIGHT = A4_WIDTH      # 595.27 points
-    
+
     def __init__(self, config: BookConfig, images: Optional[Dict[int, bytes]] = None):
         self.config = config
         self.font_manager = FontManager()
         self.font = self.font_manager.get_available_font(config.font_family)
         self.images = images or {}
-    
+
     def _get_image_reader(self, page_num: int) -> Optional[ImageReader]:
         """Get ImageReader for a page's image if available."""
         if page_num in self.images and self.images[page_num]:
@@ -506,7 +542,23 @@ class PDFSequentialGenerator:
             except Exception:
                 return None
         return None
-    
+
+    def _draw_background(
+        self,
+        c: canvas.Canvas,
+        page_width: float,
+        page_height: float
+    ):
+        """Draw background color for a page if configured."""
+        if self.config.background_color:
+            try:
+                color = HexColor(self.config.background_color)
+                c.setFillColor(color)
+                c.rect(0, 0, page_width, page_height, fill=True, stroke=False)
+                c.setFillColor(black)  # Reset to black for text
+            except ValueError:
+                pass  # Invalid color, skip background
+
     def _draw_page_content(
         self,
         c: canvas.Canvas,
@@ -515,9 +567,12 @@ class PDFSequentialGenerator:
         page_height: float
     ):
         """Draw content for a single A5 page."""
+        # Draw background first
+        self._draw_background(c, page_width, page_height)
+
         if page is None:
             return
-        
+
         # Check if we have an image for this page
         image_reader = self._get_image_reader(page.page_number)
         
@@ -555,30 +610,41 @@ class PDFSequentialGenerator:
     ):
         """Draw a page with image on top and text at bottom."""
         margin = self.config.margin_top
-        
-        # Calculate image area (top 60% of page)
-        image_area_height = (page_height - 2 * margin) * 0.60
-        text_area_height = (page_height - 2 * margin) * 0.35
-        gap = (page_height - 2 * margin) * 0.05
-        
+
+        # Calculate image area based on text_on_image setting
+        if self.config.text_on_image:
+            # Text is on image, use 90% of page for image
+            image_area_height = (page_height - 2 * margin) * 0.90
+            text_area_height = 0
+            gap = 0
+        else:
+            # Text below image, use 60% for image
+            image_area_height = (page_height - 2 * margin) * 0.60
+            text_area_height = (page_height - 2 * margin) * 0.35
+            gap = (page_height - 2 * margin) * 0.05
+
         # Image dimensions (maintain aspect ratio)
         img_width, img_height = image_reader.getSize()
         aspect_ratio = img_width / img_height
-        
+
         # Fit image within available space
         available_width = page_width - 2 * margin
-        
+
         if aspect_ratio > (available_width / image_area_height):
             draw_width = available_width
             draw_height = draw_width / aspect_ratio
         else:
             draw_height = image_area_height
             draw_width = draw_height * aspect_ratio
-        
-        # Center image horizontally
+
+        # Center image horizontally and vertically when text_on_image
         img_x = (page_width - draw_width) / 2
-        img_y = margin + text_area_height + gap
-        
+        if self.config.text_on_image:
+            # Center vertically
+            img_y = (page_height - draw_height) / 2
+        else:
+            img_y = margin + text_area_height + gap
+
         # Draw image
         c.drawImage(
             image_reader,
@@ -588,10 +654,14 @@ class PDFSequentialGenerator:
             preserveAspectRatio=True,
             anchor='sw'
         )
-        
+
+        # Skip text if it's already rendered on the image
+        if self.config.text_on_image:
+            return
+
         # Draw text below image
         text_y = margin + text_area_height / 2
-        
+
         if page.page_type == PageType.COVER:
             c.setFont(self.font, self.config.title_font_size)
             title_lines = self._wrap_text(
@@ -603,11 +673,11 @@ class PDFSequentialGenerator:
             start_y = text_y + total_height / 2
             for i, line in enumerate(title_lines):
                 c.drawCentredString(text_center_x, start_y - (i * line_height), line)
-        
+
         elif page.page_type == PageType.END:
             c.setFont(self.font, self.config.title_font_size)
             c.drawCentredString(text_center_x, text_y, page.content)
-        
+
         elif page.page_type == PageType.CONTENT:
             c.setFont(self.font, self.config.font_size)
             lines = self._wrap_text(

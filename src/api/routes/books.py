@@ -18,7 +18,7 @@ from src.api.schemas import (
     JobStatus,
     ErrorResponse,
 )
-from src.core.config import BookConfig, LLMConfig
+from src.core.config import BookConfig, LLMConfig, DEFAULT_IMAGE_MODEL
 from src.core.llm_connector import adapt_story_for_children, analyze_story_for_visuals
 from src.core.text_processor import TextProcessor, validate_book_content
 from src.core.pdf_generator import generate_both_pdfs
@@ -60,6 +60,8 @@ def _generate_book_task(job_id: str, request: BookGenerateRequest) -> None:
             cover_title=request.title,
             author_name=request.author,
             end_page_text=request.end_text,
+            text_on_image=request.text_on_image,
+            background_color=request.background_color,
         )
         logger.info(f"[{job_id}] Book config created: age {request.age_min}-{request.age_max}, language: {request.language}")
 
@@ -146,6 +148,10 @@ def _generate_book_task(job_id: str, request: BookGenerateRequest) -> None:
                 )
                 if analysis_response.success and not visual_context.is_empty():
                     logger.info(f"[{job_id}] Visual context extracted: {len(visual_context.characters)} characters, setting: {visual_context.setting[:50] if visual_context.setting else 'N/A'}...")
+                    # Use suggested background color if not specified in request
+                    if not request.background_color and visual_context.background_color:
+                        book_config.background_color = visual_context.background_color
+                        logger.info(f"[{job_id}] Using suggested background color: {visual_context.background_color}")
                 else:
                     logger.warning(f"[{job_id}] Could not extract visual context: {analysis_response.error if not analysis_response.success else 'empty response'}")
             else:
@@ -294,12 +300,13 @@ async def generate_book_from_file(
     skip_adaptation: bool = Form(False),
     end_text: str = Form("The End"),
     generate_images: bool = Form(False),
-    image_model: str = Form("google/gemini-3-pro-image-preview"),
+    image_model: str = Form(DEFAULT_IMAGE_MODEL),
     image_style: str = Form(
         "children's book illustration, soft watercolor style, gentle colors, simple shapes, cute and friendly"
     ),
     use_image_cache: bool = Form(True),
     text_on_image: bool = Form(False),
+    background_color: Optional[str] = Form(None),
 ) -> BookGenerateResponse:
     """
     Generate a children's book from an uploaded text file.
@@ -335,6 +342,7 @@ async def generate_book_from_file(
         image_style=image_style,
         use_image_cache=use_image_cache,
         text_on_image=text_on_image,
+        background_color=background_color,
     )
 
     # Create job
