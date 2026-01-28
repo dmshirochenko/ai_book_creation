@@ -1,0 +1,34 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+.venv
+venv
+*.egg-info
+.eggs
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Environment
+.env
+
+# Output directories (mounted as volumes)
+output/
+image_cache/
+
+# Documentation
+*.md
+!requirements.txt
+
+# OS files
+.DS_Store
+Thumbs.db

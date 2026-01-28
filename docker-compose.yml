@@ -1,0 +1,14 @@
+services:
+  book-generator:
+    build: .
+    container_name: ai-book-generator
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Persist generated PDFs
+      - ./output:/app/output
+      # Persist cached images
+      - ./image_cache:/app/image_cache
+    restart: unless-stopped
