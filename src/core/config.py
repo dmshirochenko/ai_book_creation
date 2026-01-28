@@ -54,6 +54,12 @@ class BookConfig:
     # Font configuration
     font_family: str = "DejaVuSans"  # Unicode-compatible font
 
+    # Image settings
+    text_on_image: bool = False  # If True, text is rendered on images, skip PDF text
+
+    # PDF background (None for white, or hex color like "#FFF8E7" for cream)
+    background_color: Optional[str] = None
+
 
 @dataclass
 class LLMConfig:
