@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from dotenv import load_dotenv
 
-from src.api.routes import health, books
+from src.api.routes import health, books, stories
 
 
 # Configure logging
@@ -55,12 +55,21 @@ app = FastAPI(
 Generate print-ready PDF booklets from stories for young children.
 
 ## Features
+- **Original Story Creation** - Generate age-appropriate stories from prompts with safety guardrails
 - **LLM-powered text adaptation** - Automatically simplifies stories for ages 2-4
 - **AI-generated illustrations** - Create unique images via OpenRouter
 - **Print-ready output** - PDF booklets with correct page ordering for double-sided printing
 - **Review PDF** - Sequential A5 PDF for on-screen reading
 
 ## Workflow
+
+### Option 1: Create Original Story
+1. **POST** `/api/v1/stories/create` - Generate a story from your prompt
+2. **GET** `/api/v1/stories/{job_id}/status` - Check status and get generated story
+3. **POST** `/api/v1/books/generate` - Convert story to book (use generated story text)
+4. **GET** `/api/v1/books/{job_id}/download/booklet` - Download print-ready PDF
+
+### Option 2: Use Existing Story
 1. **POST** `/api/v1/books/generate` - Submit a story for processing
 2. **GET** `/api/v1/books/{job_id}/status` - Check generation progress
 3. **GET** `/api/v1/books/{job_id}/download/booklet` - Download print-ready PDF
@@ -82,6 +91,7 @@ app.add_middleware(
 # Include routers
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(books.router, prefix="/api/v1")
+app.include_router(stories.router, prefix="/api/v1")
 
 
 @app.get("/", include_in_schema=False)

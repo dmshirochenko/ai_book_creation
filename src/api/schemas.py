@@ -96,7 +96,80 @@ class ErrorResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     """Health check response."""
-    
+
     status: str = "healthy"
     version: str = "1.0.0"
     openrouter_configured: bool
+
+
+# =============================================================================
+# STORY CREATION SCHEMAS
+# =============================================================================
+
+class StoryCreateRequest(BaseModel):
+    """Request schema for story creation."""
+
+    prompt: str = Field(
+        ...,
+        min_length=10,
+        max_length=500,
+        description="Your story idea or prompt (10-500 characters)"
+    )
+    age_min: int = Field(2, ge=1, le=10, description="Minimum target age")
+    age_max: int = Field(4, ge=1, le=10, description="Maximum target age")
+    tone: Literal["cheerful", "calm", "adventurous", "silly"] = Field(
+        "cheerful",
+        description="Story tone and mood"
+    )
+    length: Literal["short", "medium", "long"] = Field(
+        "medium",
+        description="Story length (short=6-8 pages, medium=10-12, long=14-16)"
+    )
+    language: str = Field("English", description="Story language")
+    author: str = Field("A Bedtime Story", description="Author name for book generation")
+    generate_book: bool = Field(
+        False,
+        description="Automatically generate book PDF after story creation"
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "prompt": "A curious kitten discovers a magical garden in the backyard",
+                    "age_min": 2,
+                    "age_max": 4,
+                    "tone": "cheerful",
+                    "length": "medium",
+                    "language": "English",
+                    "author": "A Bedtime Story",
+                    "generate_book": False
+                }
+            ]
+        }
+    }
+
+
+class StoryJobStatus(BaseModel):
+    """Status of a story creation job."""
+
+    job_id: str
+    status: Literal["pending", "processing", "completed", "failed"]
+    progress: Optional[str] = Field(None, description="Current progress message")
+    error: Optional[str] = Field(None, description="Error message if failed")
+
+    # Story-specific fields
+    generated_title: Optional[str] = Field(None, description="LLM-generated story title")
+    generated_story: Optional[str] = Field(None, description="Full story text (formatted)")
+    story_length: Optional[int] = Field(None, description="Number of pages/lines in story")
+    tokens_used: Optional[int] = Field(None, description="Tokens used for generation")
+
+    # If generate_book was requested
+    book_job_id: Optional[str] = Field(None, description="Book generation job ID if requested")
+
+
+class StoryCreateResponse(BaseModel):
+    """Response schema for story creation request."""
+
+    job_id: str = Field(..., description="Unique job identifier for tracking")
+    message: str = Field(..., description="Status message")
