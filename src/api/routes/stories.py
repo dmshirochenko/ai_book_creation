@@ -5,6 +5,7 @@ This module provides API endpoints for generating original children's stories
 from user prompts with safety guardrails.
 """
 
+import asyncio
 import uuid
 import logging
 from typing import Dict
@@ -30,7 +31,7 @@ router = APIRouter(prefix="/stories", tags=["Story Creation"])
 story_jobs: Dict[str, StoryJobStatus] = {}
 
 
-def _create_story_task(job_id: str, request: StoryCreateRequest) -> None:
+async def _create_story_task(job_id: str, request: StoryCreateRequest) -> None:
     """
     Background task to create a story.
     Updates job status as it progresses.
@@ -59,7 +60,7 @@ def _create_story_task(job_id: str, request: StoryCreateRequest) -> None:
         generator = StoryGenerator(llm_config)
 
         # Generate story
-        result = generator.generate_story(
+        result = await generator.generate_story(
             user_prompt=request.prompt,
             age_min=request.age_min,
             age_max=request.age_max,
@@ -83,7 +84,7 @@ def _create_story_task(job_id: str, request: StoryCreateRequest) -> None:
         story_jobs[job_id].story_length = result.page_count
         story_jobs[job_id].tokens_used = result.tokens_used
 
-        logger.info(f"[{job_id}] ✅ Story created: '{result.title}', {result.page_count} pages, {result.tokens_used} tokens")
+        logger.info(f"[{job_id}] Story created: '{result.title}', {result.page_count} pages, {result.tokens_used} tokens")
 
         # If generate_book requested, create book generation job
         if request.generate_book:
@@ -113,15 +114,8 @@ def _create_story_task(job_id: str, request: StoryCreateRequest) -> None:
                     progress="Job created, waiting to start...",
                 )
 
-                # Start book generation task
-                # Note: We can't use BackgroundTasks here, so we call directly
-                # This is a limitation - ideally we'd queue this properly
-                import threading
-                thread = threading.Thread(
-                    target=_generate_book_task,
-                    args=(book_job_id, book_request)
-                )
-                thread.start()
+                # Start book generation as a concurrent async task
+                asyncio.create_task(_generate_book_task(book_job_id, book_request))
 
                 # Store book job reference
                 story_jobs[job_id].book_job_id = book_job_id
@@ -133,7 +127,7 @@ def _create_story_task(job_id: str, request: StoryCreateRequest) -> None:
                 story_jobs[job_id].progress += f" Note: Book generation failed to start: {str(e)}"
 
     except Exception as e:
-        logger.error(f"[{job_id}] ❌ Story creation failed: {str(e)}", exc_info=True)
+        logger.error(f"[{job_id}] Story creation failed: {str(e)}", exc_info=True)
         story_jobs[job_id].status = "failed"
         story_jobs[job_id].error = str(e)
         story_jobs[job_id].progress = f"Failed: {str(e)}"

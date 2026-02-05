@@ -79,7 +79,7 @@ class StoryGenerator:
 
         return (len(violations) == 0, violations)
 
-    def generate_story(
+    async def generate_story(
         self,
         user_prompt: str,
         age_min: int = 2,
@@ -126,7 +126,7 @@ class StoryGenerator:
 
         # Call LLM
         logger.info(f"Calling LLM for story generation with {self.config.max_tokens} max tokens")
-        response: LLMResponse = self.client._call_llm(
+        response: LLMResponse = await self.client._call_llm(
             prompt,
             model_override=None  # Use default model from config
         )
@@ -167,7 +167,7 @@ class StoryGenerator:
 
         formatted_story = '\n'.join(story_lines)
 
-        logger.info(f"✅ Story generated successfully: '{title}', {len(story_lines)} pages, {response.tokens_used} tokens")
+        logger.info(f"Story generated successfully: '{title}', {len(story_lines)} pages, {response.tokens_used} tokens")
 
         return StoryGenerationResult(
             success=True,
@@ -182,7 +182,7 @@ class StoryGenerator:
 # CONVENIENCE FUNCTIONS
 # =============================================================================
 
-def generate_story_from_prompt(
+async def generate_story_from_prompt(
     user_prompt: str,
     config: Optional[LLMConfig] = None,
     age_min: int = 2,
@@ -213,7 +213,7 @@ def generate_story_from_prompt(
     config.max_tokens = 3000
 
     generator = StoryGenerator(config)
-    return generator.generate_story(
+    return await generator.generate_story(
         user_prompt=user_prompt,
         age_min=age_min,
         age_max=age_max,

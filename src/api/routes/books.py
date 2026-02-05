@@ -34,14 +34,14 @@ jobs: Dict[str, JobStatus] = {}
 OUTPUT_DIR = "output"
 
 
-def _generate_book_task(job_id: str, request: BookGenerateRequest) -> None:
+async def _generate_book_task(job_id: str, request: BookGenerateRequest) -> None:
     """
     Background task to generate the book.
     Updates job status as it progresses.
     """
     logger.info(f"[{job_id}] Starting book generation task")
     logger.info(f"[{job_id}] Title: {request.title}, Skip adaptation: {request.skip_adaptation}")
-    
+
     try:
         jobs[job_id].status = "processing"
         jobs[job_id].progress = "Starting book generation..."
@@ -80,7 +80,7 @@ def _generate_book_task(job_id: str, request: BookGenerateRequest) -> None:
             else:
                 logger.info(f"[{job_id}] Adapting story with LLM...")
                 jobs[job_id].progress = "Adapting story with LLM..."
-                response = adapt_story_for_children(
+                response = await adapt_story_for_children(
                     story=story_text,
                     config=llm_config,
                     target_age_min=request.age_min,
@@ -142,7 +142,7 @@ def _generate_book_task(job_id: str, request: BookGenerateRequest) -> None:
             # Analyze story for visual context (characters, setting, etc.)
             if llm_config.validate():
                 logger.info(f"[{job_id}] Analyzing story for visual context...")
-                visual_context, analysis_response = analyze_story_for_visuals(
+                visual_context, analysis_response = await analyze_story_for_visuals(
                     story=story_text,
                     config=llm_config,
                 )
@@ -179,6 +179,8 @@ def _generate_book_task(job_id: str, request: BookGenerateRequest) -> None:
                     for p in book_content.pages
                 ]
 
+                logger.info(f"[{job_id}] Page data for image generation: {[(p['page_number'], p['page_type']) for p in page_data]}")
+
                 story_context = " ".join(
                     [
                         p.content
@@ -187,10 +189,12 @@ def _generate_book_task(job_id: str, request: BookGenerateRequest) -> None:
                     ][:3]
                 )
 
-                image_results = image_generator.generate_all_images(
+                logger.info(f"[{job_id}] Calling generate_all_images with {len(page_data)} pages")
+                image_results = await image_generator.generate_all_images(
                     pages=page_data,
                     story_context=story_context,
                 )
+                logger.info(f"[{job_id}] Image results: {[(pn, r.success, r.error if not r.success else 'OK') for pn, r in image_results.items()]}")
 
                 images = {}
                 for page_num, result in image_results.items():
@@ -233,10 +237,10 @@ def _generate_book_task(job_id: str, request: BookGenerateRequest) -> None:
         jobs[job_id].progress = "Book generation completed!"
         jobs[job_id].booklet_filename = booklet_filename
         jobs[job_id].review_filename = review_filename
-        logger.info(f"[{job_id}] ✅ Book generation completed successfully!")
+        logger.info(f"[{job_id}] Book generation completed successfully!")
 
     except Exception as e:
-        logger.error(f"[{job_id}] ❌ Book generation failed: {str(e)}", exc_info=True)
+        logger.error(f"[{job_id}] Book generation failed: {str(e)}", exc_info=True)
         jobs[job_id].status = "failed"
         jobs[job_id].error = str(e)
         jobs[job_id].progress = f"Failed: {str(e)}"
@@ -253,7 +257,7 @@ async def generate_book(
 ) -> BookGenerateResponse:
     """
     Generate a children's book from story text.
-    
+
     Returns a job ID to track progress. Use `/books/{job_id}/status` to check status
     and `/books/{job_id}/download/{type}` to download the PDFs when complete.
     """
@@ -310,7 +314,7 @@ async def generate_book_from_file(
 ) -> BookGenerateResponse:
     """
     Generate a children's book from an uploaded text file.
-    
+
     Returns a job ID to track progress.
     """
     # Read file content
@@ -373,7 +377,7 @@ async def get_job_status(job_id: str) -> JobStatus:
     """
     if job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")
-    
+
     return jobs[job_id]
 
 
@@ -387,7 +391,7 @@ async def get_job_status(job_id: str) -> JobStatus:
 async def download_book(job_id: str, pdf_type: str) -> FileResponse:
     """
     Download a generated PDF.
-    
+
     - `pdf_type`: Either "booklet" (for printing) or "review" (for screen reading)
     """
     if job_id not in jobs:
