@@ -316,9 +316,10 @@ def build_story_adaptation_prompt(
 # IMAGE GENERATION PROMPTS
 # =============================================================================
 
-# A5 at 300dpi for print quality
-IMAGE_SIZE_INSTRUCTION = """IMAGE FORMAT: Portrait orientation (taller than wide), aspect ratio 1:1.41 (A5 paper size).
-Generate at 1748x2480 pixels for print quality. The image MUST be vertical/portrait, not square or landscape."""
+# Portrait format close to A5 with soft edges for seamless page blending
+IMAGE_SIZE_INSTRUCTION = """IMAGE FORMAT: Portrait orientation (taller than wide), 3:4 aspect ratio.
+Generate at 1800x2400 pixels for print quality. The image MUST be vertical/portrait, not square or landscape.
+EDGES: The illustration should have soft, gently fading edges that gradually blend into white around the borders, creating a vignette-like effect. Avoid hard or sharp edges at the image boundary."""
 
 # Base style suffix added to all image prompts
 IMAGE_STYLE_SUFFIX = "safe for children ages {target_age_min}-{target_age_max}"
