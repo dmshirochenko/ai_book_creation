@@ -27,7 +27,7 @@ class BookGenerateRequest(BaseModel):
         description="OpenRouter image model to use"
     )
     image_style: str = Field(
-        "children's book illustration, soft watercolor style, gentle colors, simple shapes, cute and friendly, soft faded edges that blend into white background, no hard borders",
+        "children's book illustration, soft watercolor style, gentle colors, simple shapes, cute and friendly",
         description="Style description for generated images"
     )
     use_image_cache: bool = Field(True, description="Use cached images if available")

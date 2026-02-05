@@ -288,17 +288,29 @@ class BasePDFGenerator:
         x_offset: float,
         y_offset: float,
         page_width: float,
-        page_height: float
+        page_height: float,
+        full_page_image: bool = False
     ):
-        """Draw content for a single page."""
-        # Draw background first
-        self._draw_background(c, x_offset, y_offset, page_width, page_height)
+        """Draw content for a single page.
+
+        Args:
+            c: Canvas to draw on
+            page: Page content to draw
+            x_offset: X offset for the page area
+            y_offset: Y offset for the page area
+            page_width: Width of the page area
+            page_height: Height of the page area
+            full_page_image: If True, images fill the entire page (for booklet PDF)
+        """
+        # Check if we have an image for this page
+        image_reader = self._get_image_reader(page.page_number) if page else None
+
+        # Only draw background if NOT full_page_image OR no image available
+        if not full_page_image or not image_reader:
+            self._draw_background(c, x_offset, y_offset, page_width, page_height)
 
         if page is None:
             return  # Leave blank
-
-        # Check if we have an image for this page
-        image_reader = self._get_image_reader(page.page_number)
 
         # Calculate text area
         text_width = page_width - self.config.margin_left - self.config.margin_right
@@ -309,7 +321,8 @@ class BasePDFGenerator:
             self._draw_page_with_image(
                 c, page, image_reader,
                 x_offset, y_offset, page_width, page_height,
-                text_center_x, text_width
+                text_center_x, text_width,
+                full_page_image=full_page_image
             )
         else:
             # Text-only layout (centered)
@@ -332,9 +345,81 @@ class BasePDFGenerator:
         page_width: float,
         page_height: float,
         text_center_x: float,
-        text_width: float
+        text_width: float,
+        full_page_image: bool = False
     ):
-        """Draw a page with image on top and text at bottom."""
+        """Draw a page with image on top and text at bottom.
+
+        Args:
+            c: Canvas to draw on
+            page: Page content
+            image_reader: Image to draw
+            x_offset: X offset for the page area
+            y_offset: Y offset for the page area
+            page_width: Width of the page area
+            page_height: Height of the page area
+            text_center_x: X coordinate for centered text
+            text_width: Maximum width for text
+            full_page_image: If True, image fills entire page (booklet mode)
+        """
+        if full_page_image:
+            # Full-page mode for booklet PDF - fit image within page
+            margin = 5  # Small margin for safety
+
+            if self.config.text_on_image:
+                # Full page, no text overlay needed
+                image_area_height = page_height - 2 * margin
+                text_area_height = 0
+            else:
+                # Reserve 15% at bottom for text overlay
+                text_area_height = page_height * 0.15
+                image_area_height = page_height - text_area_height - margin
+
+            # Available width with minimal margins
+            available_width = page_width - 2 * margin
+
+            # Image dimensions (maintain aspect ratio)
+            img_width, img_height = image_reader.getSize()
+            aspect_ratio = img_width / img_height
+
+            # Scale to FIT within the area (preserve aspect ratio)
+            if aspect_ratio > (available_width / image_area_height):
+                # Width-constrained
+                draw_width = available_width
+                draw_height = draw_width / aspect_ratio
+            else:
+                # Height-constrained
+                draw_height = image_area_height
+                draw_width = draw_height * aspect_ratio
+
+            # Center image horizontally
+            img_x = x_offset + (page_width - draw_width) / 2
+
+            if self.config.text_on_image:
+                # Center vertically
+                img_y = y_offset + (page_height - draw_height) / 2
+            else:
+                # Position image above text area, centered in image area
+                img_y = y_offset + text_area_height + (image_area_height - draw_height) / 2
+
+            # Draw image
+            c.drawImage(
+                image_reader,
+                img_x, img_y,
+                width=draw_width,
+                height=draw_height,
+                preserveAspectRatio=True,
+                anchor='sw'
+            )
+
+            # Draw text below image if not text_on_image
+            if not self.config.text_on_image:
+                text_y = y_offset + text_area_height / 2
+                self._draw_text_for_page(c, page, text_center_x, text_y, text_width)
+
+            return
+
+        # Original behavior for review PDF (60%/90% sizing with margins)
         margin = self.config.margin_top
 
         # Calculate image area based on text_on_image setting
@@ -389,7 +474,17 @@ class BasePDFGenerator:
 
         # Draw text below image
         text_y = y_offset + margin + text_area_height / 2
+        self._draw_text_for_page(c, page, text_center_x, text_y, text_width)
 
+    def _draw_text_for_page(
+        self,
+        c: canvas.Canvas,
+        page: BookPage,
+        text_center_x: float,
+        text_y: float,
+        text_width: float
+    ):
+        """Draw text for a page at the specified position."""
         if page.page_type == PageType.COVER:
             c.setFont(self.font, self.config.title_font_size)
             title_lines = self._wrap_text(
@@ -579,12 +674,14 @@ class PDFBookletGenerator(BasePDFGenerator):
             right_page = orderer.get_page_or_blank(content.pages, right_num)
 
             # Draw left page (left half of A4 landscape)
+            # Use full_page_image=True for booklet PDF
             self._draw_page_content(
                 c, left_page,
                 x_offset=0,
                 y_offset=0,
                 page_width=HALF_WIDTH,
-                page_height=LANDSCAPE_HEIGHT
+                page_height=LANDSCAPE_HEIGHT,
+                full_page_image=True
             )
 
             # Draw right page (right half of A4 landscape)
@@ -593,7 +690,8 @@ class PDFBookletGenerator(BasePDFGenerator):
                 x_offset=HALF_WIDTH,
                 y_offset=0,
                 page_width=HALF_WIDTH,
-                page_height=LANDSCAPE_HEIGHT
+                page_height=LANDSCAPE_HEIGHT,
+                full_page_image=True
             )
 
             c.showPage()

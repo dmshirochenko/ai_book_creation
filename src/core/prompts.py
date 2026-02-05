@@ -316,41 +316,47 @@ def build_story_adaptation_prompt(
 # IMAGE GENERATION PROMPTS
 # =============================================================================
 
+# A5 at 300dpi for print quality
+IMAGE_SIZE_INSTRUCTION = """IMAGE FORMAT: Portrait orientation (taller than wide), aspect ratio 1:1.41 (A5 paper size).
+Generate at 1748x2480 pixels for print quality. The image MUST be vertical/portrait, not square or landscape."""
+
 # Base style suffix added to all image prompts
 IMAGE_STYLE_SUFFIX = "safe for children ages {target_age_min}-{target_age_max}"
 
 # Cover page prompts (with visual context)
 IMAGE_COVER_WITH_TEXT_TEMPLATE = """Create a book cover illustration for a children's book.
 Style: {base_style}
+{size_instruction}
 The image should be inviting, magical, and set the tone for the story.
 Story summary: {story_summary}
 {visual_context}
-IMPORTANT: Include the title "{book_title}" prominently displayed on the cover in a fun, child-friendly font.
-The image should have soft, faded edges that gently blend into a white background - like a vignette effect. Avoid hard rectangular borders."""
+IMPORTANT: Include the title "{book_title}" prominently displayed on the cover in a fun, child-friendly font."""
 
 IMAGE_COVER_NO_TEXT_TEMPLATE = """Create a book cover illustration for a children's book titled "{book_title}".
 Style: {base_style}
+{size_instruction}
 The image should be inviting, magical, and set the tone for the story.
 Story summary: {story_summary}
 {visual_context}
-The image should have soft, faded edges that gently blend into a white background - like a vignette effect. Avoid hard rectangular borders. No text in the image."""
+No text in the image."""
 
 # End page prompt (with visual context)
 IMAGE_END_PAGE_TEMPLATE = """Create a peaceful, concluding illustration for a children's book.
 Style: {base_style}
+{size_instruction}
 The scene should feel calm, complete, and satisfying - like a happy ending.
 Context from the story: {story_context}
 {visual_context}
-IMPORTANT: The image should have soft, faded edges that gently blend into a white background - like a vignette effect. Avoid hard rectangular borders.{text_instruction}"""
+{text_instruction}"""
 
 # Content page prompt (with visual context)
 IMAGE_CONTENT_PAGE_TEMPLATE = """Create an illustration for page {page_number} of a children's book.
 Style: {base_style}
+{size_instruction}
 Scene to illustrate: {page_text}
 Overall story context: {story_context}
 {visual_context}
-The illustration should be simple, clear, and directly related to the text.
-IMPORTANT: The image should have soft, faded edges that gently blend into a white background - like a vignette effect. Avoid hard rectangular borders. This allows text to be placed below the image.{text_instruction}"""
+The illustration should be simple, clear, and directly related to the text.{text_instruction}"""
 
 # Text overlay instructions
 TEXT_OVERLAY_INSTRUCTION_TEMPLATE = """
@@ -362,8 +368,7 @@ Text styling:
 - Font: Large, rounded, child-friendly font (like a storybook font)
 - Size: Very large and easy to read for young children
 - Color: Dark text (black or dark brown) with a soft white or cream glow/shadow for readability
-- Position: Bottom third of the image, centered horizontally
-- Background: Subtle light wash or soft gradient behind text area to ensure readability against the illustration
+- Background: Subtle light wash or soft gradient behind text area to ensure readability
 - Style: Friendly and playful, matching children's picture book aesthetics
 
 The text must be clearly legible and an integral part of the illustration design."""
@@ -416,7 +421,7 @@ def build_cover_image_prompt(
 ) -> str:
     """
     Build prompt for cover page illustration.
-    
+
     Args:
         style: Base image style description
         book_title: Title of the book
@@ -424,16 +429,17 @@ def build_cover_image_prompt(
         target_age: Tuple of (min_age, max_age)
         text_on_image: Whether to include title text on the image
         visual_context: Optional visual context for consistent illustrations
-        
+
     Returns:
         Formatted prompt string
     """
     base_style = build_image_style(style, target_age[0], target_age[1])
     visual_section = visual_context.to_prompt_section() if visual_context and not visual_context.is_empty() else ""
-    
+
     if text_on_image:
         return IMAGE_COVER_WITH_TEXT_TEMPLATE.format(
             base_style=base_style,
+            size_instruction=IMAGE_SIZE_INSTRUCTION,
             story_summary=story_summary,
             book_title=book_title,
             visual_context=visual_section
@@ -441,6 +447,7 @@ def build_cover_image_prompt(
     else:
         return IMAGE_COVER_NO_TEXT_TEMPLATE.format(
             base_style=base_style,
+            size_instruction=IMAGE_SIZE_INSTRUCTION,
             story_summary=story_summary,
             book_title=book_title,
             visual_context=visual_section
@@ -457,7 +464,7 @@ def build_end_page_image_prompt(
 ) -> str:
     """
     Build prompt for end page illustration.
-    
+
     Args:
         style: Base image style description
         story_context: Context from the story
@@ -465,16 +472,17 @@ def build_end_page_image_prompt(
         text_on_image: Whether to include text on the image
         page_text: Text to overlay if text_on_image is True
         visual_context: Optional visual context for consistent illustrations
-        
+
     Returns:
         Formatted prompt string
     """
     base_style = build_image_style(style, target_age[0], target_age[1])
     text_instruction = build_text_instruction(text_on_image, page_text)
     visual_section = visual_context.to_prompt_section() if visual_context and not visual_context.is_empty() else ""
-    
+
     return IMAGE_END_PAGE_TEMPLATE.format(
         base_style=base_style,
+        size_instruction=IMAGE_SIZE_INSTRUCTION,
         story_context=story_context,
         text_instruction=text_instruction,
         visual_context=visual_section
@@ -492,7 +500,7 @@ def build_content_page_image_prompt(
 ) -> str:
     """
     Build prompt for content page illustration.
-    
+
     Args:
         style: Base image style description
         page_text: Text content of this page
@@ -501,16 +509,17 @@ def build_content_page_image_prompt(
         target_age: Tuple of (min_age, max_age)
         text_on_image: Whether to include text on the image
         visual_context: Optional visual context for consistent illustrations
-        
+
     Returns:
         Formatted prompt string
     """
     base_style = build_image_style(style, target_age[0], target_age[1])
     text_instruction = build_text_instruction(text_on_image, page_text)
     visual_section = visual_context.to_prompt_section() if visual_context and not visual_context.is_empty() else ""
-    
+
     return IMAGE_CONTENT_PAGE_TEMPLATE.format(
         base_style=base_style,
+        size_instruction=IMAGE_SIZE_INSTRUCTION,
         page_text=page_text,
         page_number=page_number,
         story_context=story_context,

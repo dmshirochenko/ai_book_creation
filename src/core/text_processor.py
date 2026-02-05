@@ -244,13 +244,13 @@ class TextProcessor:
         """
         Process a raw story directly (without LLM adaptation).
         Useful for pre-adapted or manually written stories.
-        
+
         Args:
-            story: Story text (one sentence/paragraph per line)
+            story: Story text (one sentence/paragraph per line, or a single paragraph)
             title: Book title
             author: Author name
             language: Book language
-            
+
         Returns:
             BookContent ready for PDF generation
         """
@@ -259,8 +259,20 @@ class TextProcessor:
         if lines and lines[0].strip().lower() == title.lower():
             # First line is the title, skip it
             story = '\n'.join(lines[1:])
-        
-        # Process the story content directly (custom_title will be used for cover)
+
+        # If story is a single paragraph (no line breaks), split into sentences
+        # to create individual pages
+        lines = story.strip().split('\n')
+        if len(lines) == 1 and len(lines[0]) > self.max_chars_per_page:
+            # Single long paragraph - split by sentences
+            sentences = self._split_into_sentences(lines[0])
+            # Join title with sentences separated by newlines
+            story = f"{title}\n" + '\n'.join(sentences)
+        else:
+            # Multiple lines - prepend title
+            story = f"{title}\n{story}"
+
+        # Process the story content (first line will be extracted as title)
         return self.process(story, author, language, custom_title=title)
 
 
