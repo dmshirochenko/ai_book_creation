@@ -41,6 +41,9 @@ async def init_db() -> None:
         max_overflow=10,
         pool_pre_ping=True,
         pool_recycle=300,
+        connect_args={
+            "statement_cache_size": 0,
+        },
     )
     _async_session_factory = async_sessionmaker(
         _engine, class_=AsyncSession, expire_on_commit=False
