@@ -8,9 +8,9 @@ from user prompts with safety guardrails.
 import asyncio
 import uuid
 import logging
-from typing import Dict
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.schemas import (
     StoryCreateRequest,
@@ -18,8 +18,11 @@ from src.api.schemas import (
     StoryJobStatus,
     ErrorResponse,
 )
+from src.api.deps import get_db, get_current_user_id
 from src.core.config import LLMConfig
 from src.core.story_generator import StoryGenerator
+from src.db.engine import get_session_factory
+from src.db import repository as repo
 
 
 # Configure logging
@@ -27,110 +30,142 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/stories", tags=["Story Creation"])
 
-# In-memory job storage (use Redis/database in production)
-story_jobs: Dict[str, StoryJobStatus] = {}
 
-
-async def _create_story_task(job_id: str, request: StoryCreateRequest) -> None:
+async def _create_story_task(
+    job_id: str, request: StoryCreateRequest, user_id: uuid.UUID
+) -> None:
     """
     Background task to create a story.
-    Updates job status as it progresses.
+    Uses its own DB session (background tasks run outside FastAPI dependency injection).
     """
     logger.info(f"[{job_id}] Starting story creation task")
     logger.info(f"[{job_id}] Prompt: '{request.prompt[:50]}...', tone: {request.tone}, length: {request.length}")
 
-    try:
-        story_jobs[job_id].status = "processing"
-        story_jobs[job_id].progress = "Validating prompt and preparing generation..."
-        logger.info(f"[{job_id}] Status updated to 'processing'")
+    session_factory = get_session_factory()
+    if session_factory is None:
+        logger.error(f"[{job_id}] Database not initialized, cannot run background task")
+        return
 
-        # Initialize LLM config
-        llm_config = LLMConfig()
-        if not llm_config.validate():
-            logger.error(f"[{job_id}] No OpenRouter API key configured")
-            story_jobs[job_id].status = "failed"
-            story_jobs[job_id].error = "OpenRouter API key not configured. Set OPENROUTER_API_KEY in .env file."
-            return
+    async with session_factory() as session:
+        try:
+            await repo.update_story_job(
+                session, uuid.UUID(job_id),
+                status="processing",
+                progress="Validating prompt and preparing generation...",
+            )
+            logger.info(f"[{job_id}] Status updated to 'processing'")
 
-        # Increase max_tokens for story generation (stories need more space than adaptation)
-        llm_config.max_tokens = 3000
-        llm_config.temperature = 0.7  # Creative but controlled
-
-        story_jobs[job_id].progress = "Generating your story..."
-        generator = StoryGenerator(llm_config)
-
-        # Generate story
-        result = await generator.generate_story(
-            user_prompt=request.prompt,
-            age_min=request.age_min,
-            age_max=request.age_max,
-            tone=request.tone,
-            length=request.length,
-            language=request.language
-        )
-
-        if not result.success:
-            logger.warning(f"[{job_id}] Story generation failed: {result.error}")
-            story_jobs[job_id].status = "failed"
-            story_jobs[job_id].error = result.error
-            story_jobs[job_id].progress = f"Failed: {result.error}"
-            return
-
-        # Success - store results
-        story_jobs[job_id].status = "completed"
-        story_jobs[job_id].progress = "Story created successfully!"
-        story_jobs[job_id].generated_title = result.title
-        story_jobs[job_id].generated_story = result.story
-        story_jobs[job_id].story_length = result.page_count
-        story_jobs[job_id].tokens_used = result.tokens_used
-
-        logger.info(f"[{job_id}] Story created: '{result.title}', {result.page_count} pages, {result.tokens_used} tokens")
-
-        # If generate_book requested, create book generation job
-        if request.generate_book:
-            logger.info(f"[{job_id}] User requested automatic book generation")
-            try:
-                from src.api.routes.books import jobs as book_jobs, _generate_book_task
-                from src.api.schemas import BookGenerateRequest, JobStatus
-
-                book_job_id = str(uuid.uuid4())
-
-                # Create book request with the generated story
-                book_request = BookGenerateRequest(
-                    story=f"{result.title}\n{result.story}",
-                    title=result.title,
-                    author=request.author,
-                    age_min=request.age_min,
-                    age_max=request.age_max,
-                    language=request.language,
-                    skip_adaptation=True,  # Story is already formatted for children
-                    generate_images=False,  # User can enable this later if desired
+            # Initialize LLM config
+            llm_config = LLMConfig()
+            if not llm_config.validate():
+                logger.error(f"[{job_id}] No OpenRouter API key configured")
+                await repo.update_story_job(
+                    session, uuid.UUID(job_id),
+                    status="failed",
+                    error="OpenRouter API key not configured. Set OPENROUTER_API_KEY in .env file.",
                 )
+                return
 
-                # Create book job
-                book_jobs[book_job_id] = JobStatus(
-                    job_id=book_job_id,
-                    status="pending",
-                    progress="Job created, waiting to start...",
+            # Increase max_tokens for story generation (stories need more space than adaptation)
+            llm_config.max_tokens = 3000
+            llm_config.temperature = 0.7  # Creative but controlled
+
+            await repo.update_story_job(
+                session, uuid.UUID(job_id),
+                progress="Generating your story...",
+            )
+            generator = StoryGenerator(llm_config)
+
+            # Generate story
+            result = await generator.generate_story(
+                user_prompt=request.prompt,
+                age_min=request.age_min,
+                age_max=request.age_max,
+                tone=request.tone,
+                length=request.length,
+                language=request.language,
+            )
+
+            if not result.success:
+                logger.warning(f"[{job_id}] Story generation failed: {result.error}")
+                await repo.update_story_job(
+                    session, uuid.UUID(job_id),
+                    status="failed",
+                    error=result.error,
+                    progress=f"Failed: {result.error}",
                 )
+                return
 
-                # Start book generation as a concurrent async task
-                asyncio.create_task(_generate_book_task(book_job_id, book_request))
+            # Success - store results
+            await repo.update_story_job(
+                session, uuid.UUID(job_id),
+                status="completed",
+                progress="Story created successfully!",
+                generated_title=result.title,
+                generated_story=result.story,
+                story_length=result.page_count,
+                tokens_used=result.tokens_used,
+            )
 
-                # Store book job reference
-                story_jobs[job_id].book_job_id = book_job_id
-                story_jobs[job_id].progress += f" Book generation started (job {book_job_id})."
-                logger.info(f"[{job_id}] Started book generation job {book_job_id}")
+            logger.info(f"[{job_id}] Story created: '{result.title}', {result.page_count} pages, {result.tokens_used} tokens")
 
-            except Exception as e:
-                logger.error(f"[{job_id}] Failed to start book generation: {str(e)}", exc_info=True)
-                story_jobs[job_id].progress += f" Note: Book generation failed to start: {str(e)}"
+            # If generate_book requested, create book generation job
+            if request.generate_book:
+                logger.info(f"[{job_id}] User requested automatic book generation")
+                try:
+                    from src.api.routes.books import _generate_book_task
+                    from src.api.schemas import BookGenerateRequest
 
-    except Exception as e:
-        logger.error(f"[{job_id}] Story creation failed: {str(e)}", exc_info=True)
-        story_jobs[job_id].status = "failed"
-        story_jobs[job_id].error = str(e)
-        story_jobs[job_id].progress = f"Failed: {str(e)}"
+                    book_job_id = uuid.uuid4()
+
+                    # Create book request with the generated story
+                    book_request = BookGenerateRequest(
+                        story=f"{result.title}\n{result.story}",
+                        title=result.title,
+                        author=request.author,
+                        age_min=request.age_min,
+                        age_max=request.age_max,
+                        language=request.language,
+                        skip_adaptation=True,  # Story is already formatted for children
+                        generate_images=False,  # User can enable this later if desired
+                    )
+
+                    # Create book job in database
+                    await repo.create_book_job(
+                        session,
+                        job_id=book_job_id,
+                        user_id=user_id,
+                        request_params=book_request.model_dump(),
+                    )
+
+                    # Start book generation as a concurrent async task
+                    asyncio.create_task(
+                        _generate_book_task(str(book_job_id), book_request, user_id)
+                    )
+
+                    # Store book job reference
+                    await repo.update_story_job(
+                        session, uuid.UUID(job_id),
+                        book_job_id=book_job_id,
+                        progress=f"Story created successfully! Book generation started (job {book_job_id}).",
+                    )
+                    logger.info(f"[{job_id}] Started book generation job {book_job_id}")
+
+                except Exception as e:
+                    logger.error(f"[{job_id}] Failed to start book generation: {str(e)}", exc_info=True)
+                    await repo.update_story_job(
+                        session, uuid.UUID(job_id),
+                        progress=f"Story created successfully! Note: Book generation failed to start: {str(e)}",
+                    )
+
+        except Exception as e:
+            logger.error(f"[{job_id}] Story creation failed: {str(e)}", exc_info=True)
+            await repo.update_story_job(
+                session, uuid.UUID(job_id),
+                status="failed",
+                error=str(e),
+                progress=f"Failed: {str(e)}",
+            )
 
 
 @router.post(
@@ -141,6 +176,8 @@ async def _create_story_task(job_id: str, request: StoryCreateRequest) -> None:
 async def create_story(
     request: StoryCreateRequest,
     background_tasks: BackgroundTasks,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
 ) -> StoryCreateResponse:
     """
     Generate an original children's story from a prompt.
@@ -170,22 +207,21 @@ async def create_story(
     if request.age_min > request.age_max:
         raise HTTPException(
             status_code=400,
-            detail="age_min must be less than or equal to age_max"
+            detail="age_min must be less than or equal to age_max",
         )
 
-    # Create job
-    job_id = str(uuid.uuid4())
-    story_jobs[job_id] = StoryJobStatus(
-        job_id=job_id,
-        status="pending",
-        progress="Job created, waiting to start...",
+    # Create job in database
+    job_id = uuid.uuid4()
+    await repo.create_story_job(
+        db, job_id=job_id, user_id=user_id,
+        request_params=request.model_dump(),
     )
 
     # Start background task
-    background_tasks.add_task(_create_story_task, job_id, request)
+    background_tasks.add_task(_create_story_task, str(job_id), request, user_id)
 
     return StoryCreateResponse(
-        job_id=job_id,
+        job_id=str(job_id),
         message="Story creation started. Use /stories/{job_id}/status to track progress.",
     )
 
@@ -195,7 +231,11 @@ async def create_story(
     response_model=StoryJobStatus,
     responses={404: {"model": ErrorResponse}},
 )
-async def get_story_status(job_id: str) -> StoryJobStatus:
+async def get_story_status(
+    job_id: str,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> StoryJobStatus:
     """
     Get the status of a story creation job.
 
@@ -208,26 +248,42 @@ async def get_story_status(job_id: str) -> StoryJobStatus:
     - `completed`: Story generation succeeded (check `generated_story` field)
     - `failed`: Story generation failed (check `error` field)
     """
-    if job_id not in story_jobs:
+    job = await repo.get_story_job_for_user(db, uuid.UUID(job_id), user_id)
+    if not job:
         raise HTTPException(status_code=404, detail="Story job not found")
 
-    return story_jobs[job_id]
+    return StoryJobStatus(
+        job_id=str(job.id),
+        status=job.status,
+        progress=job.progress,
+        error=job.error,
+        generated_title=job.generated_title,
+        generated_story=job.generated_story,
+        story_length=job.story_length,
+        tokens_used=job.tokens_used,
+        book_job_id=str(job.book_job_id) if job.book_job_id else None,
+    )
 
 
 @router.delete(
     "/{job_id}",
     responses={404: {"model": ErrorResponse}},
 )
-async def delete_story_job(job_id: str) -> dict:
+async def delete_story_job(
+    job_id: str,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
     """
     Delete a story creation job.
 
     Removes the job from storage. This does not affect any book generation
     jobs that may have been created from this story.
     """
-    if job_id not in story_jobs:
+    job = await repo.get_story_job_for_user(db, uuid.UUID(job_id), user_id)
+    if not job:
         raise HTTPException(status_code=404, detail="Story job not found")
 
-    del story_jobs[job_id]
+    await repo.delete_story_job(db, uuid.UUID(job_id))
 
     return {"message": f"Story job {job_id} deleted successfully"}

@@ -6,6 +6,7 @@ import os
 from fastapi import APIRouter
 
 from src.api.schemas import HealthResponse
+from src.db.engine import get_session_factory
 
 router = APIRouter(tags=["Health"])
 
@@ -18,5 +19,6 @@ async def health_check() -> HealthResponse:
     return HealthResponse(
         status="healthy",
         version="1.0.0",
-        openrouter_configured=bool(os.getenv("OPENROUTER_API_KEY"))
+        openrouter_configured=bool(os.getenv("OPENROUTER_API_KEY")),
+        database_configured=get_session_factory() is not None,
     )
