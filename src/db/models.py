@@ -1,0 +1,164 @@
+"""
+SQLAlchemy async ORM models for job persistence.
+"""
+
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import (
+    String,
+    Integer,
+    BigInteger,
+    Text,
+    DateTime,
+    ForeignKey,
+    CheckConstraint,
+    Index,
+)
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class BookJob(Base):
+    __tablename__ = "book_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending"
+    )
+    progress: Mapped[str | None] = mapped_column(Text, nullable=True)
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    total_pages: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    booklet_filename: Mapped[str | None] = mapped_column(Text, nullable=True)
+    review_filename: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    request_params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    # Relationships
+    pdfs: Mapped[list["GeneratedPdf"]] = relationship(
+        back_populates="book_job", cascade="all, delete-orphan"
+    )
+    story_job: Mapped["StoryJob | None"] = relationship(back_populates="book_job")
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'processing', 'completed', 'failed')",
+            name="ck_book_jobs_status",
+        ),
+        Index("idx_book_jobs_user_id", "user_id"),
+        Index("idx_book_jobs_status", "status"),
+        Index("idx_book_jobs_created_at", "created_at"),
+    )
+
+
+class StoryJob(Base):
+    __tablename__ = "story_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending"
+    )
+    progress: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    generated_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    generated_story: Mapped[str | None] = mapped_column(Text, nullable=True)
+    story_length: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    book_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("book_jobs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    request_params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    # Relationships
+    book_job: Mapped["BookJob | None"] = relationship(back_populates="story_job")
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'processing', 'completed', 'failed')",
+            name="ck_story_jobs_status",
+        ),
+        Index("idx_story_jobs_user_id", "user_id"),
+        Index("idx_story_jobs_status", "status"),
+        Index("idx_story_jobs_book_job_id", "book_job_id"),
+    )
+
+
+class GeneratedPdf(Base):
+    __tablename__ = "generated_pdfs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    book_job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("book_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    pdf_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    filename: Mapped[str] = mapped_column(Text, nullable=False)
+    file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    file_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    # Relationships
+    book_job: Mapped["BookJob"] = relationship(back_populates="pdfs")
+
+    __table_args__ = (
+        CheckConstraint(
+            "pdf_type IN ('booklet', 'review')",
+            name="ck_generated_pdfs_type",
+        ),
+        Index("idx_generated_pdfs_user_id", "user_id"),
+        Index("idx_generated_pdfs_book_job_id", "book_job_id"),
+    )

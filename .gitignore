@@ -108,4 +108,4 @@ config.yaml
 
 # Vscode
 .vscode
-.DS_Store
+.DS_Store.claude/

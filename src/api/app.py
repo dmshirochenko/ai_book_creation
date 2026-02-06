@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from src.api.routes import health, books, stories
+from src.db.engine import init_db, close_db
 
 
 # Configure logging
@@ -43,9 +44,13 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("⚠️  No OpenRouter API key found - LLM/image features disabled")
     
+    # Initialize database
+    await init_db()
+
     yield
-    
-    # Shutdown: cleanup if needed
+
+    # Shutdown: cleanup
+    await close_db()
     logger.info("👋 Application shutting down...")
 
 
