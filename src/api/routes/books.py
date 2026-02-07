@@ -7,9 +7,8 @@ import uuid
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form, Depends
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,7 +21,7 @@ from src.api.schemas import (
     ErrorResponse,
 )
 from src.api.deps import get_db, get_current_user_id
-from src.core.config import BookConfig, LLMConfig, DEFAULT_IMAGE_MODEL
+from src.core.config import BookConfig, LLMConfig
 from src.core.llm_connector import analyze_story_for_visuals
 from src.core.text_processor import TextProcessor, validate_book_content
 from src.core.pdf_generator import generate_both_pdfs
@@ -321,84 +320,6 @@ async def generate_book(
         message="Book generation started. Use /books/{job_id}/status to track progress.",
     )
 
-
-@router.post(
-    "/generate/file",
-    response_model=BookGenerateResponse,
-    responses={400: {"model": ErrorResponse}},
-)
-async def generate_book_from_file(
-    background_tasks: BackgroundTasks,
-    user_id: uuid.UUID = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-    file: UploadFile = File(..., description="Text file containing the story"),
-    title: Optional[str] = Form(None),
-    author: str = Form("A Bedtime Story"),
-    age_min: int = Form(2),
-    age_max: int = Form(4),
-    language: str = Form("English"),
-    font_size: int = Form(24),
-    title_font_size: int = Form(36),
-    end_text: str = Form("The End"),
-    generate_images: bool = Form(False),
-    image_model: str = Form(DEFAULT_IMAGE_MODEL),
-    image_style: str = Form(
-        "children's book illustration, soft watercolor style, gentle colors, simple shapes, cute and friendly"
-    ),
-    use_image_cache: bool = Form(True),
-    text_on_image: bool = Form(False),
-    background_color: Optional[str] = Form(None),
-) -> BookGenerateResponse:
-    """
-    Generate a children's book from an uploaded text file.
-
-    Returns a job ID to track progress.
-    """
-    # Read file content
-    content = await file.read()
-    try:
-        story_text = content.decode("utf-8")
-    except UnicodeDecodeError:
-        raise HTTPException(
-            status_code=400, detail="File must be a valid UTF-8 text file"
-        )
-
-    if not story_text.strip():
-        raise HTTPException(status_code=400, detail="File is empty")
-
-    # Create request object
-    request = BookGenerateRequest(
-        story=story_text,
-        title=title,
-        author=author,
-        age_min=age_min,
-        age_max=age_max,
-        language=language,
-        font_size=font_size,
-        title_font_size=title_font_size,
-        end_text=end_text,
-        generate_images=generate_images,
-        image_model=image_model,
-        image_style=image_style,
-        use_image_cache=use_image_cache,
-        text_on_image=text_on_image,
-        background_color=background_color,
-    )
-
-    # Create job in database
-    job_id = uuid.uuid4()
-    await repo.create_book_job(
-        db, job_id=job_id, user_id=user_id,
-        request_params=request.model_dump(),
-    )
-
-    # Start background task
-    background_tasks.add_task(_generate_book_task, str(job_id), request, user_id)
-
-    return BookGenerateResponse(
-        job_id=str(job_id),
-        message="Book generation started. Use /books/{job_id}/status to track progress.",
-    )
 
 
 @router.get(
