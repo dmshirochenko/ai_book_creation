@@ -56,7 +56,6 @@ uvicorn src.api.app:app --reload --port 8000
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/v1/books/generate` | Generate book from JSON body |
-| `POST` | `/api/v1/books/generate/file` | Generate book from uploaded file |
 | `GET` | `/api/v1/books/{job_id}/status` | Check generation progress |
 | `GET` | `/api/v1/books/{job_id}/download/{type}` | Download PDF (`booklet` or `review`) |
 | `DELETE` | `/api/v1/books/{job_id}` | Delete job and files |
