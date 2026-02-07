@@ -12,6 +12,7 @@ class BookGenerateRequest(BaseModel):
     """Request schema for book generation."""
     
     story: str = Field(..., description="Story text to convert into a book")
+    story_structured: Optional[dict] = Field(None, description="Structured story JSON from story generation: {title, pages: [{text}]}")
     title: Optional[str] = Field(None, description="Book title (extracted from story if not provided)")
     author: str = Field("A Bedtime Story", description="Author name for the cover")
     age_min: int = Field(2, ge=1, le=10, description="Minimum target age")
@@ -19,7 +20,6 @@ class BookGenerateRequest(BaseModel):
     language: str = Field("English", description="Target language for the book")
     font_size: int = Field(24, ge=12, le=48, description="Content font size in points")
     title_font_size: int = Field(36, ge=18, le=72, description="Title font size in points")
-    skip_adaptation: bool = Field(False, description="Skip LLM adaptation (use story as-is)")
     end_text: str = Field("The End", description="Text for the final page")
     generate_images: bool = Field(False, description="Generate AI illustrations for each page")
     image_model: str = Field(
@@ -162,6 +162,7 @@ class StoryJobStatus(BaseModel):
     # Story-specific fields
     generated_title: Optional[str] = Field(None, description="LLM-generated story title")
     generated_story: Optional[str] = Field(None, description="Full story text (formatted)")
+    generated_story_json: Optional[dict] = Field(None, description="Structured story data: {title, pages: [{text}]}")
     story_length: Optional[int] = Field(None, description="Number of pages/lines in story")
     tokens_used: Optional[int] = Field(None, description="Tokens used for generation")
 

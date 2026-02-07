@@ -276,6 +276,102 @@ class TextProcessor:
         return self.process(story, author, language, custom_title=title)
 
 
+    def process_structured(
+        self,
+        story_data: dict,
+        author: str = "A Bedtime Story",
+        language: str = "English",
+        custom_title: Optional[str] = None
+    ) -> BookContent:
+        """
+        Process structured JSON story data into complete book content.
+
+        Args:
+            story_data: Dict with "title" (str) and "pages" (list of {"text": str})
+            author: Author name for cover
+            language: Book language
+            custom_title: Override extracted title
+
+        Returns:
+            BookContent ready for PDF generation
+        """
+        title = custom_title or story_data.get("title", "Untitled Story")
+        raw_pages = story_data.get("pages", [])
+
+        pages: List[BookPage] = []
+
+        # Cover page
+        pages.append(BookPage(
+            page_type=PageType.COVER,
+            content=title,
+            page_number=1
+        ))
+
+        # Content pages from structured data
+        page_num = 2
+        for page_data in raw_pages:
+            text = page_data.get("text", "").strip()
+            if not text:
+                continue
+
+            # Safety split for oversized pages
+            if len(text) <= self.max_chars_per_page:
+                pages.append(BookPage(
+                    page_type=PageType.CONTENT,
+                    content=text,
+                    page_number=page_num
+                ))
+                page_num += 1
+            else:
+                # Split by sentences if too long
+                sentences = self._split_into_sentences(text)
+                current_page = ""
+
+                for sentence in sentences:
+                    potential = f"{current_page} {sentence}".strip() if current_page else sentence
+
+                    if len(potential) <= self.max_chars_per_page:
+                        current_page = potential
+                    else:
+                        if current_page:
+                            pages.append(BookPage(
+                                page_type=PageType.CONTENT,
+                                content=current_page,
+                                page_number=page_num
+                            ))
+                            page_num += 1
+                        current_page = sentence
+
+                if current_page:
+                    pages.append(BookPage(
+                        page_type=PageType.CONTENT,
+                        content=current_page,
+                        page_number=page_num
+                    ))
+                    page_num += 1
+
+        # End page
+        pages.append(BookPage(
+            page_type=PageType.END,
+            content=self.end_page_text,
+            page_number=page_num
+        ))
+
+        # Ensure even page count
+        pages = self._ensure_even_pages(pages)
+
+        # Renumber pages after adjustment
+        for i, page in enumerate(pages):
+            page.page_number = i + 1
+
+        return BookContent(
+            title=title,
+            pages=pages,
+            author=author,
+            language=language
+        )
+
+
 def validate_book_content(content: BookContent) -> List[str]:
     """
     Validate book content and return list of warnings.

@@ -23,7 +23,7 @@ from src.api.schemas import (
 )
 from src.api.deps import get_db, get_current_user_id
 from src.core.config import BookConfig, LLMConfig, DEFAULT_IMAGE_MODEL
-from src.core.llm_connector import adapt_story_for_children, analyze_story_for_visuals
+from src.core.llm_connector import analyze_story_for_visuals
 from src.core.text_processor import TextProcessor, validate_book_content
 from src.core.pdf_generator import generate_both_pdfs
 from src.db.engine import get_session_factory
@@ -45,7 +45,7 @@ async def _generate_book_task(
     Uses its own DB session (background tasks run outside FastAPI dependency injection).
     """
     logger.info(f"[{job_id}] Starting book generation task")
-    logger.info(f"[{job_id}] Title: {request.title}, Skip adaptation: {request.skip_adaptation}")
+    logger.info(f"[{job_id}] Title: {request.title}")
 
     session_factory = get_session_factory()
     if session_factory is None:
@@ -80,43 +80,7 @@ async def _generate_book_task(
 
             llm_config = LLMConfig()
 
-            # Adapt story (or use as-is)
-            if request.skip_adaptation:
-                logger.info(f"[{job_id}] Skipping LLM adaptation (skip_adaptation=True)")
-                await repo.update_book_job(
-                    session, uuid.UUID(job_id),
-                    progress="Skipping LLM adaptation...",
-                )
-                adapted_text = story_text
-            else:
-                if not llm_config.validate():
-                    logger.warning(f"[{job_id}] No OpenRouter API key configured, using story as-is")
-                    await repo.update_book_job(
-                        session, uuid.UUID(job_id),
-                        progress="No API key, using story as-is...",
-                    )
-                    adapted_text = story_text
-                else:
-                    logger.info(f"[{job_id}] Adapting story with LLM...")
-                    await repo.update_book_job(
-                        session, uuid.UUID(job_id),
-                        progress="Adapting story with LLM...",
-                    )
-                    response = await adapt_story_for_children(
-                        story=story_text,
-                        config=llm_config,
-                        target_age_min=request.age_min,
-                        target_age_max=request.age_max,
-                        language=request.language,
-                    )
-                    if not response.success:
-                        logger.warning(f"[{job_id}] LLM adaptation failed: {response.error}, using original story")
-                        adapted_text = story_text
-                    else:
-                        logger.info(f"[{job_id}] LLM adaptation successful, adapted text length: {len(response.content)}")
-                        adapted_text = response.content
-
-            # Process text into pages
+            # Process text into pages (story text used as-is)
             logger.info(f"[{job_id}] Processing text into pages...")
             await repo.update_book_job(
                 session, uuid.UUID(job_id),
@@ -128,21 +92,21 @@ async def _generate_book_task(
                 end_page_text=request.end_text,
             )
 
-            if request.skip_adaptation and request.title:
-                logger.info(f"[{job_id}] Using process_raw_story (pre-formatted input)")
-                book_content = processor.process_raw_story(
-                    story=adapted_text,
-                    title=request.title,
-                    author=request.author,
-                    language=request.language,
-                )
-            else:
-                logger.info(f"[{job_id}] Using standard process (LLM-formatted input)")
-                book_content = processor.process(
-                    adapted_text=adapted_text,
+            if request.story_structured and request.story_structured.get("pages"):
+                logger.info(f"[{job_id}] Using process_structured (structured JSON input)")
+                book_content = processor.process_structured(
+                    story_data=request.story_structured,
                     author=request.author,
                     language=request.language,
                     custom_title=request.title,
+                )
+            else:
+                logger.info(f"[{job_id}] Using process_raw_story (text input)")
+                book_content = processor.process_raw_story(
+                    story=story_text,
+                    title=request.title or "My Story",
+                    author=request.author,
+                    language=request.language,
                 )
 
             await repo.update_book_job(
@@ -375,7 +339,6 @@ async def generate_book_from_file(
     language: str = Form("English"),
     font_size: int = Form(24),
     title_font_size: int = Form(36),
-    skip_adaptation: bool = Form(False),
     end_text: str = Form("The End"),
     generate_images: bool = Form(False),
     image_model: str = Form(DEFAULT_IMAGE_MODEL),
@@ -413,7 +376,6 @@ async def generate_book_from_file(
         language=language,
         font_size=font_size,
         title_font_size=title_font_size,
-        skip_adaptation=skip_adaptation,
         end_text=end_text,
         generate_images=generate_images,
         image_model=image_model,

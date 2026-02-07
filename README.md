@@ -1,10 +1,10 @@
 # Children's Book Generator API
 
-A FastAPI application that transforms stories into **print-ready PDF booklets** for young children (ages 2-4). Features LLM-powered story adaptation, AI-generated illustrations with visual consistency, and professional booklet formatting.
+A FastAPI application that transforms stories into **print-ready PDF booklets** for young children (ages 2-4). Features LLM-powered story generation with structured JSON outputs, AI-generated illustrations with visual consistency, and professional booklet formatting.
 
 ## Features
 
-- 📖 **LLM-powered text adaptation** - Automatically simplifies stories for young children
+- 📖 **LLM-powered story generation** - Creates original children's stories via structured JSON outputs (Gemini Flash)
 - 🎨 **AI-generated illustrations** - Create unique, consistent images for each page
 - 🔍 **Story visual analysis** - Extracts characters, setting, and color palette for consistent illustrations across all pages
 - 🖨️ **Print-ready output** - PDF booklets with correct page ordering for double-sided printing
@@ -16,14 +16,14 @@ A FastAPI application that transforms stories into **print-ready PDF booklets** 
 ## Architecture
 
 ```
-story input → Visual Analysis → LLM Adaptation → Image Generation → PDF Generation
-                   ↓                  ↓                  ↓
-            StoryVisualContext   Simplified Text    Consistent Images
+story input → Visual Analysis → Image Generation → PDF Generation
+                   ↓                  ↓
+            StoryVisualContext    Consistent Images
 ```
 
 **Pipeline:**
-1. **Visual Analysis** - Extracts characters, setting, atmosphere, color palette (uses structured outputs)
-2. **Story Adaptation** - Simplifies text for target age group
+1. **Story Generation** - Creates original stories via structured JSON outputs (Gemini Flash)
+2. **Visual Analysis** - Extracts characters, setting, atmosphere, color palette (uses structured outputs)
 3. **Image Generation** - Creates illustrations with consistent visual context
 4. **PDF Generation** - Produces booklet and review PDFs
 
@@ -140,7 +140,6 @@ curl -X POST "http://localhost:8000/api/v1/books/generate" \
     "language": "English",
     "font_size": 24,
     "title_font_size": 36,
-    "skip_adaptation": false,
     "end_text": "The End",
     "generate_images": true,
     "image_model": "google/gemini-2.5-flash-image",
@@ -162,7 +161,6 @@ curl -X POST "http://localhost:8000/api/v1/books/generate" \
 | `language` | string | "English" | Target language |
 | `font_size` | int | 24 | Content font size (12-48) |
 | `title_font_size` | int | 36 | Title font size (18-72) |
-| `skip_adaptation` | bool | false | Skip LLM text adaptation |
 | `end_text` | string | "The End" | Final page text |
 | `generate_images` | bool | false | Generate AI illustrations |
 | `image_model` | string | "google/gemini-2.5-flash-image" | Image generation model |
@@ -172,7 +170,7 @@ curl -X POST "http://localhost:8000/api/v1/books/generate" \
 
 ## Pre-formatted Stories
 
-Use `skip_adaptation: true` when your story is already formatted:
+Format your story with the title on the first line:
 
 ```
 Title of the Story
@@ -226,7 +224,7 @@ book_generator/
 
 | Model | Default | Purpose |
 |-------|---------|---------|
-| `model` | `anthropic/claude-3-haiku` | Story adaptation |
+| `model` | `anthropic/claude-3-haiku` | Default LLM |
 | `analysis_model` | `google/gemini-2.5-flash` | Visual analysis (structured outputs) |
 | `image_model` | `google/gemini-2.5-flash-image` | Image generation |
 

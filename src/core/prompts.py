@@ -254,65 +254,6 @@ def parse_story_analysis_response(response_text: str) -> StoryVisualContext:
 
 
 # =============================================================================
-# STORY ADAPTATION PROMPTS
-# =============================================================================
-
-STORY_ADAPTATION_PROMPT_TEMPLATE = """You are a children's book editor specializing in books for ages {target_age_min}-{target_age_max}.
-
-Your task is to adapt the following story for young children. Follow these rules strictly:
-
-CONTENT RULES:
-1. Use simple, short sentences (5-10 words each)
-2. Use a calm, gentle, reassuring tone
-3. Avoid complex vocabulary - use words a {target_age_min}-year-old would understand
-4. Remove any scary, violent, or intense content
-5. Keep the core story but simplify it dramatically
-6. Each sentence should be standalone and easy to read aloud
-
-STRUCTURE RULES:
-1. Start with a title line (just the title, no formatting)
-2. Then provide the story as separate sentences, one per line
-3. Each line should be 1-2 simple sentences maximum
-4. Aim for 8-16 lines total (this will be an 8-16 page book)
-5. End with a satisfying, calm conclusion
-
-LANGUAGE:
-- Write in {language}
-- Use the simplest words in that language
-
-ORIGINAL STORY:
-{story}
-
-ADAPTED STORY (title on first line, then one sentence per line):"""
-
-
-def build_story_adaptation_prompt(
-    story: str,
-    target_age_min: int,
-    target_age_max: int,
-    language: str
-) -> str:
-    """
-    Build the prompt for story adaptation.
-    
-    Args:
-        story: The original story text to adapt
-        target_age_min: Minimum target age
-        target_age_max: Maximum target age
-        language: Target language for the book
-        
-    Returns:
-        Formatted prompt string
-    """
-    return STORY_ADAPTATION_PROMPT_TEMPLATE.format(
-        target_age_min=target_age_min,
-        target_age_max=target_age_max,
-        language=language,
-        story=story
-    )
-
-
-# =============================================================================
 # IMAGE GENERATION PROMPTS
 # =============================================================================
 

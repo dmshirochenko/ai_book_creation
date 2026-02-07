@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-A Python application that transforms stories into **print-ready PDF booklets** for young children (ages 2-4). Exposes a **FastAPI REST API** for book generation. Pipeline: story input → LLM adaptation → optional AI illustration → PDF generation (A4 landscape sheets that fold into A5 books).
+A Python application that transforms stories into **print-ready PDF booklets** for young children (ages 2-4). Exposes a **FastAPI REST API** for book generation. Pipeline: story input → optional AI illustration → PDF generation (A4 landscape sheets that fold into A5 books). Story generation uses structured JSON outputs via Gemini Flash.
 
 ## Architecture & Data Flow
 
@@ -16,7 +16,7 @@ src/api/app.py → src/api/routes/books.py
                         src/core/pdf_generator.py ← src/core/image_generator.py (optional)
 ```
 
-- **Single API Provider**: OpenRouter handles both text (Claude Haiku) and image generation (Gemini). One `OPENROUTER_API_KEY` in `.env` covers everything.
+- **Single API Provider**: OpenRouter handles story generation (Gemini Flash), analysis (Gemini), and image generation. One `OPENROUTER_API_KEY` in `.env` covers everything.
 - **Dual PDF Output**: Always generates two PDFs—`_booklet.pdf` (imposition-ordered for duplex printing) and `_review.pdf` (sequential for screen reading).
 - **Async Job Processing**: API uses FastAPI `BackgroundTasks` for long-running generation; jobs tracked in-memory via `jobs` dict in [src/api/routes/books.py](src/api/routes/books.py).
 
@@ -30,8 +30,8 @@ src/api/app.py → src/api/routes/books.py
 | [src/api/routes/books.py](src/api/routes/books.py) | `/generate`, `/status`, `/download` endpoints |
 | [src/api/routes/health.py](src/api/routes/health.py) | Health check endpoint |
 | [src/core/config.py](src/core/config.py) | Dataclasses: `BookConfig`, `LLMConfig` |
-| [src/core/prompts.py](src/core/prompts.py) | All LLM prompts for story adaptation and image generation |
-| [src/core/llm_connector.py](src/core/llm_connector.py) | `OpenRouterClient` for story simplification |
+| [src/core/prompts.py](src/core/prompts.py) | Visual analysis and image generation prompts |
+| [src/core/llm_connector.py](src/core/llm_connector.py) | `OpenRouterClient` for story analysis and LLM calls |
 | [src/core/text_processor.py](src/core/text_processor.py) | `TextProcessor` splits text into `BookPage` objects |
 | [src/core/pdf_generator.py](src/core/pdf_generator.py) | `PDFBookletGenerator`, `FontManager`, page imposition |
 | [src/core/image_generator.py](src/core/image_generator.py) | `BookImageGenerator` with file-based caching |
@@ -66,7 +66,7 @@ uvicorn src.api.app:app --reload --port 8000
 
 1. **Job-based async**: Generation runs in background; poll `/status` for completion.
 2. **Pydantic validation**: All request bodies validated via schemas in [src/api/schemas.py](src/api/schemas.py).
-3. **Pre-formatted Stories**: Use `skip_adaptation: true` to bypass LLM. Input: first line = title, subsequent lines = one page each.
+3. **Pre-formatted Stories**: Input: first line = title, subsequent lines = one page each.
 4. **Image Caching**: Images cached by prompt hash in `image_cache/`. Set `use_image_cache: false` to regenerate.
 5. **Error Tolerance**: LLM/image failures log warnings but don't halt—book generates with available content.
 6. **Import Convention**: Use `from src.core.X import Y` for core modules and `from src.api.X import Y` for API modules.

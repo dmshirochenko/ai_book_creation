@@ -1,8 +1,8 @@
 """
-OpenRouter LLM Connector for text adaptation.
+OpenRouter LLM Connector.
 
-This module handles communication with OpenRouter API to adapt stories
-for young children.
+This module handles communication with OpenRouter API for story analysis
+and other LLM operations.
 """
 
 import httpx
@@ -12,7 +12,6 @@ from dataclasses import dataclass
 
 from src.core.config import LLMConfig
 from src.core.prompts import (
-    build_story_adaptation_prompt,
     build_story_analysis_prompt,
     get_story_analysis_response_format,
     parse_story_analysis_response,
@@ -30,7 +29,7 @@ class LLMResponse:
 
 
 class OpenRouterClient:
-    """Client for OpenRouter API to adapt text for children's books."""
+    """Client for OpenRouter API for story analysis and generation."""
 
     def __init__(self, config: LLMConfig):
         self.config = config
@@ -40,21 +39,6 @@ class OpenRouterClient:
             "HTTP-Referer": "https://github.com/book-generator",
             "X-Title": "Children's Book Generator"
         }
-
-    def _build_adaptation_prompt(
-        self,
-        story: str,
-        target_age_min: int,
-        target_age_max: int,
-        language: str
-    ) -> str:
-        """Build the prompt for story adaptation."""
-        return build_story_adaptation_prompt(
-            story=story,
-            target_age_min=target_age_min,
-            target_age_max=target_age_max,
-            language=language
-        )
 
     async def _call_llm(
         self,
@@ -166,58 +150,6 @@ class OpenRouterClient:
             return visual_context, response
         else:
             return StoryVisualContext(), response
-
-    async def adapt_story(
-        self,
-        story: str,
-        target_age_min: int = 2,
-        target_age_max: int = 4,
-        language: str = "English"
-    ) -> LLMResponse:
-        """
-        Adapt a story for young children using the LLM.
-
-        Args:
-            story: The original story text
-            target_age_min: Minimum target age
-            target_age_max: Maximum target age
-            language: Target language for the book
-
-        Returns:
-            LLMResponse with adapted text
-        """
-        prompt = self._build_adaptation_prompt(
-            story, target_age_min, target_age_max, language
-        )
-        return await self._call_llm(prompt)
-
-
-async def adapt_story_for_children(
-    story: str,
-    config: Optional[LLMConfig] = None,
-    target_age_min: int = 2,
-    target_age_max: int = 4,
-    language: str = "English"
-) -> LLMResponse:
-    """
-    Convenience function to adapt a story for children.
-
-    Args:
-        story: The original story text
-        config: LLM configuration (uses defaults if not provided)
-        target_age_min: Minimum target age
-        target_age_max: Maximum target age
-        language: Target language
-
-    Returns:
-        LLMResponse with adapted text
-    """
-    if config is None:
-        config = LLMConfig()
-
-    client = OpenRouterClient(config)
-    return await client.adapt_story(story, target_age_min, target_age_max, language)
-
 
 async def analyze_story_for_visuals(
     story: str,
