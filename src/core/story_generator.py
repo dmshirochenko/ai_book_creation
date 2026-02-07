@@ -16,6 +16,8 @@ from src.core.story_prompts import (
     check_copyrighted_content,
     check_inappropriate_keywords,
     is_refusal_response,
+    get_story_creation_response_format,
+    parse_story_output_response,
 )
 
 
@@ -31,7 +33,8 @@ class StoryGenerationResult:
     """Result of story generation."""
     success: bool
     title: str = ""
-    story: str = ""  # Full formatted story (one sentence per line)
+    story: str = ""  # Full formatted story (one sentence per line, backward compat)
+    story_structured: dict = field(default_factory=dict)  # Raw JSON: {"title": str, "pages": [{"text": str}]}
     page_count: int = 0
     tokens_used: int = 0
     error: Optional[str] = None
@@ -124,11 +127,13 @@ class StoryGenerator:
             language=language
         )
 
-        # Call LLM
-        logger.info(f"Calling LLM for story generation with {self.config.max_tokens} max tokens")
+        # Call LLM with structured JSON output
+        response_format = get_story_creation_response_format()
+        logger.info(f"Calling LLM for story generation with {self.config.max_tokens} max tokens (structured JSON)")
         response: LLMResponse = await self.client._call_llm(
             prompt,
-            model_override=None  # Use default model from config
+            response_format=response_format,
+            model_override=self.config.analysis_model  # Use Gemini Flash for structured outputs
         )
 
         if not response.success:
@@ -138,8 +143,18 @@ class StoryGenerator:
                 error=response.error or "LLM call failed"
             )
 
-        # Check if LLM refused the request
-        if is_refusal_response(response.content):
+        # Parse structured JSON response
+        parsed = parse_story_output_response(response.content)
+
+        if not parsed["title"] and not parsed["pages"]:
+            logger.error("Failed to parse story JSON response")
+            return StoryGenerationResult(
+                success=False,
+                error="Failed to parse story response"
+            )
+
+        # Check if LLM refused the request (title contains refusal pattern)
+        if is_refusal_response(parsed["title"]):
             logger.warning("LLM refused to generate story due to safety concerns")
             return StoryGenerationResult(
                 success=False,
@@ -147,24 +162,16 @@ class StoryGenerator:
                 safety_violations=["LLM refused to generate content"]
             )
 
-        # Parse story (title on first line, story on following lines)
-        lines = response.content.strip().split('\n')
-        lines = [line.strip() for line in lines if line.strip()]
-
-        if not lines:
-            logger.error("Generated story is empty")
+        # Check for empty pages (another refusal indicator)
+        if not parsed["pages"]:
+            logger.error("Generated story has no pages")
             return StoryGenerationResult(
                 success=False,
-                error="Generated story is empty"
+                error="Generated story has no pages"
             )
 
-        # Extract title and story
-        title = lines[0]
-        story_lines = lines[1:] if len(lines) > 1 else []
-
-        # Remove any markdown formatting from title
-        title = title.strip('#').strip('*').strip()
-
+        title = parsed["title"]
+        story_lines = [page["text"] for page in parsed["pages"]]
         formatted_story = '\n'.join(story_lines)
 
         logger.info(f"Story generated successfully: '{title}', {len(story_lines)} pages, {response.tokens_used} tokens")
@@ -173,6 +180,7 @@ class StoryGenerator:
             success=True,
             title=title,
             story=formatted_story,
+            story_structured=parsed,
             page_count=len(story_lines),
             tokens_used=response.tokens_used
         )

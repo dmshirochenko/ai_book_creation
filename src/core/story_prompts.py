@@ -5,8 +5,12 @@ This module contains prompts for original story generation with comprehensive
 safety guardrails to prevent inappropriate content and copyright violations.
 """
 
+import json
 import re
+import logging
 from typing import List, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -209,7 +213,7 @@ You MUST follow these rules strictly. Violations will result in the story being 
 
 5. **Refusal Protocol**:
    - If the user's prompt asks for inappropriate content, politely refuse
-   - Respond with: "I cannot create that story as it contains [reason]. Would you like me to create a similar but age-appropriate story about [alternative]?"
+   - Set the title to "I cannot create that story" and include the reason in a single page
 
 ---
 
@@ -221,11 +225,10 @@ TONE: {tone} (cheerful, calm, adventurous, or silly)
 LENGTH: {length} pages (short=6-8, medium=10-12, long=14-16)
 
 STRUCTURE:
-1. First line: Story title (simple, engaging, 2-6 words)
-2. Following lines: One sentence per line (these become book pages)
-3. Each sentence: 5-10 words, simple vocabulary
-4. Story arc: Setup → Simple problem → Easy resolution → Happy ending
-5. Use repetition and rhythm to make it engaging for young children
+1. Title: Simple, engaging, 2-6 words
+2. Pages: Each page has 1-2 simple sentences (5-10 words each)
+3. Story arc: Setup → Simple problem → Easy resolution → Happy ending
+4. Use repetition and rhythm to make it engaging for young children
 
 STYLE GUIDELINES:
 - Use present tense for immediacy ("Max jumps in the puddle")
@@ -244,7 +247,107 @@ USER'S STORY PROMPT:
 YOUR TASK:
 Generate an original, safe, engaging story based on the user's prompt. If the prompt is inappropriate or contains copyrighted characters, follow the refusal protocol above.
 
-OUTPUT FORMAT (title on first line, one sentence per line after):"""
+Return the story as structured JSON with a title and an array of pages."""
+
+
+# =============================================================================
+# STORY OUTPUT JSON SCHEMA (for OpenRouter Structured Outputs)
+# =============================================================================
+
+STORY_OUTPUT_JSON_SCHEMA = {
+    "name": "story_output",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "The story title, simple and engaging, 2-6 words"
+            },
+            "pages": {
+                "type": "array",
+                "description": "Ordered list of story pages",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "text": {
+                            "type": "string",
+                            "description": "Text content for this page. 1-2 simple sentences."
+                        }
+                    },
+                    "required": ["text"],
+                    "additionalProperties": False
+                }
+            }
+        },
+        "required": ["title", "pages"],
+        "additionalProperties": False
+    }
+}
+
+
+def get_story_creation_response_format() -> dict:
+    """
+    Get the response_format parameter for structured story outputs.
+
+    Returns:
+        Dict with type and json_schema for OpenRouter API
+    """
+    return {
+        "type": "json_schema",
+        "json_schema": STORY_OUTPUT_JSON_SCHEMA
+    }
+
+
+def parse_story_output_response(response_text: str) -> dict:
+    """
+    Parse the LLM response into a story dict.
+
+    Args:
+        response_text: Raw text response from LLM (should be valid JSON with structured outputs)
+
+    Returns:
+        Dict with "title" (str) and "pages" (list of {"text": str}), or empty structure on failure
+    """
+    empty = {"title": "", "pages": []}
+
+    try:
+        text = response_text.strip()
+
+        # Try direct JSON parse first (structured outputs)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            # Fallback: extract JSON from potential markdown wrapping
+            json_match = re.search(r'\{[\s\S]*\}', text)
+            if not json_match:
+                logger.error("Could not find JSON in story response")
+                return empty
+            data = json.loads(json_match.group())
+
+        # Validate structure
+        if not isinstance(data, dict):
+            logger.error("Story response is not a JSON object")
+            return empty
+
+        title = data.get("title", "")
+        pages = data.get("pages", [])
+
+        if not isinstance(pages, list):
+            logger.error("Story response 'pages' is not an array")
+            return empty
+
+        # Normalize pages
+        normalized_pages = []
+        for page in pages:
+            if isinstance(page, dict) and "text" in page:
+                normalized_pages.append({"text": str(page["text"])})
+
+        return {"title": str(title), "pages": normalized_pages}
+
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.error(f"Failed to parse story output: {e}")
+        return empty
 
 
 # =============================================================================

@@ -103,6 +103,7 @@ async def _create_story_task(
                 progress="Story created successfully!",
                 generated_title=result.title,
                 generated_story=result.story,
+                generated_story_json=result.story_structured,
                 story_length=result.page_count,
                 tokens_used=result.tokens_used,
             )
@@ -121,12 +122,12 @@ async def _create_story_task(
                     # Create book request with the generated story
                     book_request = BookGenerateRequest(
                         story=f"{result.title}\n{result.story}",
+                        story_structured=result.story_structured,
                         title=result.title,
                         author=request.author,
                         age_min=request.age_min,
                         age_max=request.age_max,
                         language=request.language,
-                        skip_adaptation=True,  # Story is already formatted for children
                         generate_images=False,  # User can enable this later if desired
                     )
 
@@ -259,6 +260,7 @@ async def get_story_status(
         error=job.error,
         generated_title=job.generated_title,
         generated_story=job.generated_story,
+        generated_story_json=job.generated_story_json,
         story_length=job.story_length,
         tokens_used=job.tokens_used,
         book_job_id=str(job.book_job_id) if job.book_job_id else None,

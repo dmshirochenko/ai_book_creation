@@ -89,6 +89,7 @@ class StoryJob(Base):
 
     generated_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     generated_story: Mapped[str | None] = mapped_column(Text, nullable=True)
+    generated_story_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     story_length: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
