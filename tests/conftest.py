@@ -3,7 +3,7 @@
 import os
 import pytest
 
-from src.core.config import BookConfig, LLMConfig
+from src.core.config import LLMConfig
 from src.core.text_processor import (
     TextProcessor,
     BookContent,
@@ -18,11 +18,6 @@ from src.core.prompts import Character, StoryVisualContext
 def _clear_env_keys(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
-
-
-@pytest.fixture
-def book_config():
-    return BookConfig()
 
 
 @pytest.fixture

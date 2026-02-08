@@ -9,7 +9,6 @@ from pathlib import Path
 
 import httpx
 
-from src.core.config import BookConfig
 from src.core.image_generator import (
     ImageConfig,
     ImagePromptBuilder,
