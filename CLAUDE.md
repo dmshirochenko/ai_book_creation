@@ -40,7 +40,7 @@ POST /stories/create → Structured JSON generation (Gemini Flash) → Book PDF
 4. **PDF Generation** (`pdf_generator.generate_both_pdfs`) - Produces both `_booklet.pdf` (imposition-ordered for duplex printing) and `_review.pdf` (sequential for screen)
 
 **Key data flow:**
-- `BookGenerateRequest` (Pydantic) → `_generate_book_task` background task → `BookConfig`/`LLMConfig` dataclasses
+- `BookGenerateRequest` (Pydantic) → `_generate_book_task` background task → passed directly to `pdf_generator` and `image_generator`
 - Text processing: `TextProcessor.process_raw_story()` or `TextProcessor.process_structured()` → `BookContent` with `BookPage` objects
 - Story generation returns structured JSON stored as JSONB in `story_jobs.generated_story_json`
 
