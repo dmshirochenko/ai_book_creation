@@ -8,10 +8,12 @@ This module creates print-ready PDF booklets designed for:
 - Correct page ordering for booklet assembly
 """
 
+from __future__ import annotations
+
 import os
 import io
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, TYPE_CHECKING
 from dataclasses import dataclass
 import hashlib
 
@@ -24,7 +26,9 @@ from reportlab.lib.colors import black, white, HexColor
 from reportlab.lib.utils import ImageReader
 
 from src.core.text_processor import BookContent, BookPage, PageType
-from src.api.schemas import BookGenerateRequest
+
+if TYPE_CHECKING:
+    from src.api.schemas import BookGenerateRequest
 
 
 # A4 dimensions
@@ -725,7 +729,8 @@ def generate_booklet_pdf(
         Path to generated PDF
     """
     if config is None:
-        config = BookGenerateRequest(story="")
+        from src.api.schemas import BookGenerateRequest as _BGReq
+        config = _BGReq(story="")
 
     generator = PDFBookletGenerator(
         config,
@@ -820,7 +825,8 @@ def generate_sequential_pdf(
         Path to generated PDF
     """
     if config is None:
-        config = BookGenerateRequest(story="")
+        from src.api.schemas import BookGenerateRequest as _BGReq
+        config = _BGReq(story="")
 
     generator = PDFSequentialGenerator(
         config,
@@ -856,7 +862,8 @@ def generate_both_pdfs(
         Tuple of (booklet_path, review_path)
     """
     if config is None:
-        config = BookGenerateRequest(story="")
+        from src.api.schemas import BookGenerateRequest as _BGReq
+        config = _BGReq(story="")
 
     # Create shared resources to avoid redundant initialization
     font_manager = get_font_manager()
