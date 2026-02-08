@@ -24,7 +24,7 @@ from reportlab.lib.colors import black, white, HexColor
 from reportlab.lib.utils import ImageReader
 
 from src.core.text_processor import BookContent, BookPage, PageType
-from src.core.config import BookConfig
+from src.api.schemas import BookGenerateRequest
 
 
 # A4 dimensions
@@ -246,7 +246,7 @@ class BasePDFGenerator:
 
     def __init__(
         self,
-        config: BookConfig,
+        config: BookGenerateRequest,
         image_cache: Optional[ImageCache] = None,
         text_cache: Optional[TextWrapCache] = None,
         font_manager: Optional[FontManager] = None,
@@ -625,7 +625,7 @@ class PDFBookletGenerator(BasePDFGenerator):
 
     def __init__(
         self,
-        config: BookConfig,
+        config: BookGenerateRequest,
         images: Optional[Dict[int, bytes]] = None,
         image_cache: Optional[ImageCache] = None,
         text_cache: Optional[TextWrapCache] = None,
@@ -703,7 +703,7 @@ class PDFBookletGenerator(BasePDFGenerator):
 def generate_booklet_pdf(
     content: BookContent,
     output_path: str,
-    config: Optional[BookConfig] = None,
+    config: Optional[BookGenerateRequest] = None,
     images: Optional[Dict[int, bytes]] = None,
     image_cache: Optional[ImageCache] = None,
     text_cache: Optional[TextWrapCache] = None,
@@ -725,7 +725,7 @@ def generate_booklet_pdf(
         Path to generated PDF
     """
     if config is None:
-        config = BookConfig()
+        config = BookGenerateRequest(story="")
 
     generator = PDFBookletGenerator(
         config,
@@ -742,7 +742,7 @@ class PDFSequentialGenerator(BasePDFGenerator):
 
     def __init__(
         self,
-        config: BookConfig,
+        config: BookGenerateRequest,
         images: Optional[Dict[int, bytes]] = None,
         image_cache: Optional[ImageCache] = None,
         text_cache: Optional[TextWrapCache] = None,
@@ -798,7 +798,7 @@ class PDFSequentialGenerator(BasePDFGenerator):
 def generate_sequential_pdf(
     content: BookContent,
     output_path: str,
-    config: Optional[BookConfig] = None,
+    config: Optional[BookGenerateRequest] = None,
     images: Optional[Dict[int, bytes]] = None,
     image_cache: Optional[ImageCache] = None,
     text_cache: Optional[TextWrapCache] = None,
@@ -820,7 +820,7 @@ def generate_sequential_pdf(
         Path to generated PDF
     """
     if config is None:
-        config = BookConfig()
+        config = BookGenerateRequest(story="")
 
     generator = PDFSequentialGenerator(
         config,
@@ -836,7 +836,7 @@ def generate_both_pdfs(
     content: BookContent,
     booklet_path: str,
     review_path: str,
-    config: Optional[BookConfig] = None,
+    config: Optional[BookGenerateRequest] = None,
     images: Optional[Dict[int, bytes]] = None
 ) -> Tuple[str, str]:
     """
@@ -856,7 +856,7 @@ def generate_both_pdfs(
         Tuple of (booklet_path, review_path)
     """
     if config is None:
-        config = BookConfig()
+        config = BookGenerateRequest(story="")
 
     # Create shared resources to avoid redundant initialization
     font_manager = get_font_manager()

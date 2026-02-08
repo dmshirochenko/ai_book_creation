@@ -16,52 +16,6 @@ load_dotenv()
 
 
 @dataclass
-class BookConfig:
-    """Configuration for book generation."""
-    
-    # Target audience
-    target_age_min: int = 2
-    target_age_max: int = 4
-    
-    # Language settings
-    language: str = "English"
-    
-    # Typography
-    font_size: int = 24
-    title_font_size: int = 36
-    
-    # Page settings
-    max_sentences_per_page: int = 2
-    max_characters_per_page: int = 100
-    
-    # PDF settings
-    paper_size: str = "A4"  # A4 landscape for printing
-    output_dpi: int = 300
-    
-    # Margins (in points, 72 points = 1 inch)
-    margin_top: int = 50
-    margin_bottom: int = 50
-    margin_left: int = 40
-    margin_right: int = 40
-    
-    # Cover settings
-    cover_title: Optional[str] = None
-    author_name: str = "A Bedtime Story"
-    
-    # End page text
-    end_page_text: str = "The End"
-    
-    # Font configuration
-    font_family: str = "DejaVuSans"  # Unicode-compatible font
-
-    # Image settings
-    text_on_image: bool = False  # If True, text is rendered on images, skip PDF text
-
-    # PDF background (None for white, or hex color like "#FFF8E7" for cream)
-    background_color: Optional[str] = None
-
-
-@dataclass
 class LLMConfig:
     """Configuration for OpenRouter LLM API."""
     
@@ -78,13 +32,3 @@ class LLMConfig:
     def validate(self) -> bool:
         """Check if API key is configured."""
         return bool(self.api_key)
-
-
-@dataclass
-class GeneratorConfig:
-    """Main configuration combining all settings."""
-
-    book: BookConfig = field(default_factory=BookConfig)
-    llm: LLMConfig = field(default_factory=LLMConfig)
-
-    debug_mode: bool = False

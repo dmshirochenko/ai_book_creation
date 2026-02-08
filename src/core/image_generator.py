@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
-from src.core.config import BookConfig, DEFAULT_IMAGE_MODEL
+from src.core.config import DEFAULT_IMAGE_MODEL
+from src.api.schemas import BookGenerateRequest
 from src.core.prompts import (
     build_cover_image_prompt,
     build_end_page_image_prompt,
@@ -226,14 +227,14 @@ class BookImageGenerator:
     def __init__(
         self,
         config: ImageConfig,
-        book_config: Optional[BookConfig] = None,
+        book_config: Optional[BookGenerateRequest] = None,
         visual_context: Optional[StoryVisualContext] = None,
         storage: Optional[Any] = None,
         book_job_id: Optional[str] = None,
         cache_check_fn: Optional[Callable[[str], Awaitable[Any]]] = None,
     ):
         self.config = config
-        self.book_config = book_config or BookConfig()
+        self.book_config = book_config or BookGenerateRequest(story="")
         self.visual_context = visual_context
         self.storage = storage
         self.book_job_id = book_job_id
@@ -295,8 +296,8 @@ class BookImageGenerator:
         # Build prompt
         prompt_builder = ImagePromptBuilder(
             style=self.config.image_style,
-            book_title=self.book_config.cover_title or "Story Book",
-            target_age=(self.book_config.target_age_min, self.book_config.target_age_max),
+            book_title=self.book_config.title or "Story Book",
+            target_age=(self.book_config.age_min, self.book_config.age_max),
             text_on_image=self.config.text_on_image,
             visual_context=self.visual_context
         )
