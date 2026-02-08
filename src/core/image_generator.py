@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 logger = logging.getLogger(__name__)
 
 from src.core.config import DEFAULT_IMAGE_MODEL
+from src.core.retry import async_retry
 
 if TYPE_CHECKING:
     from src.api.schemas import BookGenerateRequest
@@ -28,6 +29,11 @@ from src.core.prompts import (
     build_content_page_image_prompt,
     StoryVisualContext,
 )
+
+
+class ImageGenerationError(Exception):
+    """Raised when a single image generation attempt fails."""
+    pass
 
 
 @dataclass
@@ -290,6 +296,14 @@ class BookImageGenerator:
         await self.storage.upload_bytes(image_data, key, "image/png")
         return key
 
+    @async_retry(max_attempts=3, backoff_base=2.0)
+    async def _generate_with_retry(self, prompt: str) -> GeneratedImage:
+        """Generate a single image, raising on failure so @async_retry can retry."""
+        result = await self.generator.generate(prompt)
+        if not result.success:
+            raise ImageGenerationError(result.error or "Unknown image generation error")
+        return result
+
     async def generate_image(
         self,
         page_text: str,
@@ -323,8 +337,11 @@ class BookImageGenerator:
         if cached:
             return cached
 
-        # Generate new image
-        result = await self.generator.generate(prompt)
+        # Generate new image (with automatic retry)
+        try:
+            result = await self._generate_with_retry(prompt)
+        except ImageGenerationError as e:
+            result = GeneratedImage(success=False, error=str(e), prompt_used=prompt)
 
         # Upload to R2 if successful and storage is configured
         if result.success and result.image_data and self.storage and self.book_job_id:
