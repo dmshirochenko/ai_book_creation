@@ -84,6 +84,23 @@ class BookRegenerateResponse(BaseModel):
     message: str = Field(..., description="Status message")
 
 
+class FailedImageItem(BaseModel):
+    """A single failed image in the status response."""
+
+    page_number: int = Field(..., description="Page number of the failed image")
+    error: Optional[str] = Field(None, description="Error message from generation")
+
+
+class BookImageStatusResponse(BaseModel):
+    """Response schema for checking book image health."""
+
+    job_id: str = Field(..., description="Book job identifier")
+    total_images: int = Field(..., description="Total number of images for this book")
+    failed_images: int = Field(..., description="Number of failed images")
+    has_failed_images: bool = Field(..., description="Whether the book has any failed images")
+    failed_pages: List[FailedImageItem] = Field(default_factory=list, description="Details of failed images")
+
+
 class BookListItem(BaseModel):
     """Item in the list of generated books."""
     
