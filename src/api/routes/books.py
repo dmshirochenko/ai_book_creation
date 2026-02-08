@@ -25,7 +25,7 @@ from src.api.schemas import (
     ErrorResponse,
 )
 from src.api.deps import get_db, get_current_user_id
-from src.core.config import BookConfig, LLMConfig
+from src.core.config import LLMConfig
 from src.core.llm_connector import analyze_story_for_visuals
 from src.core.text_processor import TextProcessor, validate_book_content
 from src.core.pdf_generator import generate_both_pdfs
@@ -67,20 +67,7 @@ async def _generate_book_task(
             story_text = request.story
             logger.debug(f"[{job_id}] Story length: {len(story_text)} characters")
 
-            # Configure book settings
-            book_config = BookConfig(
-                target_age_min=request.age_min,
-                target_age_max=request.age_max,
-                language=request.language,
-                font_size=request.font_size,
-                title_font_size=request.title_font_size,
-                cover_title=request.title,
-                author_name=request.author,
-                end_page_text=request.end_text,
-                text_on_image=request.text_on_image,
-                background_color=request.background_color,
-            )
-            logger.info(f"[{job_id}] Book config created: age {request.age_min}-{request.age_max}, language: {request.language}")
+            logger.info(f"[{job_id}] Book settings: age {request.age_min}-{request.age_max}, language: {request.language}")
 
             llm_config = LLMConfig()
 
@@ -152,7 +139,7 @@ async def _generate_book_task(
                         logger.info(f"[{job_id}] Visual context extracted: {len(visual_context.characters)} characters, setting: {visual_context.setting[:50] if visual_context.setting else 'N/A'}...")
                         # Use suggested background color if not specified in request
                         if not request.background_color and visual_context.background_color:
-                            book_config.background_color = visual_context.background_color
+                            request.background_color = visual_context.background_color
                             logger.info(f"[{job_id}] Using suggested background color: {visual_context.background_color}")
                     else:
                         logger.warning(f"[{job_id}] Could not extract visual context: {analysis_response.error if not analysis_response.success else 'empty response'}")
@@ -184,7 +171,7 @@ async def _generate_book_task(
 
                     image_generator = BookImageGenerator(
                         image_config,
-                        book_config,
+                        request,
                         visual_context,
                         storage=storage,
                         book_job_id=job_id,
@@ -272,7 +259,7 @@ async def _generate_book_task(
                     content=book_content,
                     booklet_path=booklet_path,
                     review_path=review_path,
-                    config=book_config,
+                    config=request,
                     images=images,
                 )
                 logger.info(f"[{job_id}] PDFs generated: {booklet_filename}, {review_filename}")
