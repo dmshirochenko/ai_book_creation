@@ -18,6 +18,8 @@ from src.api.schemas import (
     JobStatus,
     BookListItem,
     BookListResponse,
+    GeneratedBookItem,
+    GeneratedBookListResponse,
     ErrorResponse,
 )
 from src.api.deps import get_db, get_current_user_id
@@ -320,6 +322,33 @@ async def generate_book(
         message="Book generation started. Use /books/{job_id}/status to track progress.",
     )
 
+
+
+@router.get(
+    "/generated",
+    response_model=GeneratedBookListResponse,
+)
+async def list_generated_books(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+    limit: int = 50,
+    offset: int = 0,
+) -> GeneratedBookListResponse:
+    """
+    List completed books with download links for the authenticated user.
+    """
+    jobs = await repo.list_completed_books_for_user(db, user_id, limit=limit, offset=offset)
+    items = [
+        GeneratedBookItem(
+            job_id=str(j.id),
+            title=j.title or "Untitled",
+            booklet_url=f"/api/v1/books/{j.id}/download/booklet",
+            review_url=f"/api/v1/books/{j.id}/download/review",
+            created_at=j.created_at.isoformat() if j.created_at else "",
+        )
+        for j in jobs
+    ]
+    return GeneratedBookListResponse(books=items, total=len(items))
 
 
 @router.get(

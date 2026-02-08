@@ -87,9 +87,26 @@ class BookListResponse(BaseModel):
     total: int
 
 
+class GeneratedBookItem(BaseModel):
+    """A completed book with download links."""
+
+    job_id: str
+    title: str
+    booklet_url: str
+    review_url: str
+    created_at: str
+
+
+class GeneratedBookListResponse(BaseModel):
+    """Response for listing generated books."""
+
+    books: List[GeneratedBookItem]
+    total: int
+
+
 class ErrorResponse(BaseModel):
     """Standard error response."""
-    
+
     detail: str
     error_code: Optional[str] = None
 

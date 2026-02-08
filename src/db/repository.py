@@ -86,6 +86,22 @@ async def list_book_jobs_for_user(
     return list(result.scalars().all())
 
 
+async def list_completed_books_for_user(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[BookJob]:
+    result = await session.execute(
+        select(BookJob)
+        .where(BookJob.user_id == user_id, BookJob.status == "completed")
+        .order_by(BookJob.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(result.scalars().all())
+
+
 # ========================
 # STORY JOBS
 # ========================
