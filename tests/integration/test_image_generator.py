@@ -16,7 +16,6 @@ from src.core.image_generator import (
     OpenRouterImageGenerator,
     BookImageGenerator,
     GeneratedImage,
-    create_image_generator,
 )
 from src.core.prompts import StoryVisualContext, Character
 
@@ -190,53 +189,76 @@ class TestOpenRouterImageGenerator:
 
 
 class TestBookImageGenerator:
-    def test_cache_path_deterministic(self, tmp_path):
-        config = ImageConfig(api_key="test", cache_dir=str(tmp_path))
+    def test_prompt_hash_deterministic(self):
+        h1 = BookImageGenerator.compute_prompt_hash("same prompt")
+        h2 = BookImageGenerator.compute_prompt_hash("same prompt")
+        assert h1 == h2
+
+    def test_prompt_hash_different_for_different_prompts(self):
+        h1 = BookImageGenerator.compute_prompt_hash("prompt A")
+        h2 = BookImageGenerator.compute_prompt_hash("prompt B")
+        assert h1 != h2
+
+    async def test_check_cache_hit(self):
+        """Cache hit: cache_check_fn returns a row, storage downloads and re-uploads."""
+        config = ImageConfig(api_key="test", use_cache=True)
+
+        mock_storage = AsyncMock()
+        mock_storage.download_bytes = AsyncMock(return_value=MINIMAL_PNG)
+        mock_storage.upload_bytes = AsyncMock()
+
+        cached_row = MagicMock()
+        cached_row.r2_key = "images/old-job/page_1.png"
+
+        async def cache_fn(prompt_hash):
+            return cached_row
+
+        gen = BookImageGenerator(
+            config,
+            storage=mock_storage,
+            book_job_id="new-job",
+            cache_check_fn=cache_fn,
+        )
+        result = await gen._check_cache("test prompt", page_number=1)
+        assert result is not None
+        assert result.success is True
+        assert result.cached is True
+        assert result.image_data == MINIMAL_PNG
+        mock_storage.upload_bytes.assert_called_once()
+
+    async def test_check_cache_miss(self):
+        """Cache miss: cache_check_fn returns None."""
+        config = ImageConfig(api_key="test", use_cache=True)
+        mock_storage = AsyncMock()
+
+        async def cache_fn(prompt_hash):
+            return None
+
+        gen = BookImageGenerator(
+            config,
+            storage=mock_storage,
+            book_job_id="job-id",
+            cache_check_fn=cache_fn,
+        )
+        result = await gen._check_cache("test prompt", page_number=1)
+        assert result is None
+
+    async def test_check_cache_disabled(self):
+        """Cache disabled: _check_cache returns None immediately."""
+        config = ImageConfig(api_key="test", use_cache=False)
         gen = BookImageGenerator(config)
-        path1 = gen._get_cache_path("same prompt")
-        path2 = gen._get_cache_path("same prompt")
-        assert path1 == path2
+        result = await gen._check_cache("test prompt", page_number=1)
+        assert result is None
 
-    def test_cache_path_different_for_different_prompts(self, tmp_path):
-        config = ImageConfig(api_key="test", cache_dir=str(tmp_path))
-        gen = BookImageGenerator(config)
-        path1 = gen._get_cache_path("prompt A")
-        path2 = gen._get_cache_path("prompt B")
-        assert path1 != path2
-
-    def test_save_and_load_cache(self, tmp_path):
-        config = ImageConfig(api_key="test", cache_dir=str(tmp_path), use_cache=True)
-        gen = BookImageGenerator(config)
-
-        gen._save_to_cache("test prompt", MINIMAL_PNG)
-        loaded = gen._load_from_cache("test prompt")
-        assert loaded is not None
-        assert loaded.success is True
-        assert loaded.cached is True
-        assert loaded.image_data == MINIMAL_PNG
-
-    def test_cache_miss(self, tmp_path):
-        config = ImageConfig(api_key="test", cache_dir=str(tmp_path), use_cache=True)
-        gen = BookImageGenerator(config)
-        loaded = gen._load_from_cache("nonexistent prompt")
-        assert loaded is None
-
-    def test_cache_disabled(self, tmp_path):
-        config = ImageConfig(api_key="test", cache_dir=str(tmp_path), use_cache=False)
-        gen = BookImageGenerator(config)
-        gen._save_to_cache("test prompt", MINIMAL_PNG)
-        loaded = gen._load_from_cache("test prompt")
-        assert loaded is None
-
-    def test_set_visual_context(self, tmp_path, sample_visual_context):
-        config = ImageConfig(api_key="test", cache_dir=str(tmp_path))
+    def test_set_visual_context(self, sample_visual_context):
+        config = ImageConfig(api_key="test")
         gen = BookImageGenerator(config)
         assert gen.visual_context is None
         gen.set_visual_context(sample_visual_context)
         assert gen.visual_context is sample_visual_context
 
-    async def test_generate_all_images_skips_blank(self, tmp_path):
-        config = ImageConfig(api_key="test", cache_dir=str(tmp_path), use_cache=False)
+    async def test_generate_all_images_skips_blank(self):
+        config = ImageConfig(api_key="test", use_cache=False)
         gen = BookImageGenerator(config)
 
         # Mock the generator to return success
@@ -254,19 +276,3 @@ class TestBookImageGenerator:
         assert 3 not in results
         assert 1 in results
         assert 2 in results
-
-
-# =============================================================================
-# create_image_generator
-# =============================================================================
-
-
-class TestCreateImageGenerator:
-    def test_factory_function(self):
-        gen = create_image_generator(api_key="test-key")
-        assert isinstance(gen, BookImageGenerator)
-
-    def test_factory_with_book_config(self):
-        book_config = BookConfig(target_age_min=3, target_age_max=5)
-        gen = create_image_generator(api_key="test-key", book_config=book_config)
-        assert gen.book_config.target_age_min == 3

@@ -49,14 +49,8 @@ class TestLLMConfig:
 
 
 class TestGeneratorConfig:
-    def test_creates_output_dir(self, tmp_path):
-        output = str(tmp_path / "test_output")
-        config = GeneratorConfig(output_dir=output)
-        assert config.output_dir == output
-        import os
-        assert os.path.isdir(output)
-
     def test_default_sub_configs(self):
         config = GeneratorConfig()
         assert isinstance(config.book, BookConfig)
         assert isinstance(config.llm, LLMConfig)
+        assert config.debug_mode is False

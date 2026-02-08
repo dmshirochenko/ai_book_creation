@@ -11,8 +11,7 @@ import httpx
 import base64
 import hashlib
 import logging
-from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Callable, Awaitable
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -221,59 +220,67 @@ class OpenRouterImageGenerator:
 class BookImageGenerator:
     """
     Main class for generating all images for a children's book.
-    Handles caching and coordination of image generation.
+    Handles R2 storage and DB-backed caching of generated images.
     """
 
     def __init__(
         self,
         config: ImageConfig,
         book_config: Optional[BookConfig] = None,
-        visual_context: Optional[StoryVisualContext] = None
+        visual_context: Optional[StoryVisualContext] = None,
+        storage: Optional[Any] = None,
+        book_job_id: Optional[str] = None,
+        cache_check_fn: Optional[Callable[[str], Awaitable[Any]]] = None,
     ):
         self.config = config
         self.book_config = book_config or BookConfig()
         self.visual_context = visual_context
-        self.cache_dir = Path(config.cache_dir)
+        self.storage = storage
+        self.book_job_id = book_job_id
+        self.cache_check_fn = cache_check_fn
         self.generator = OpenRouterImageGenerator(config)
-
-        # Ensure cache directory exists
-        if config.use_cache:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def set_visual_context(self, visual_context: StoryVisualContext) -> None:
         """Set the visual context for consistent illustrations."""
         self.visual_context = visual_context
 
-    def _get_cache_path(self, prompt: str) -> Path:
-        """Generate cache file path from prompt hash."""
-        prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:16]
-        return self.cache_dir / f"img_{prompt_hash}.png"
+    @staticmethod
+    def compute_prompt_hash(prompt: str) -> str:
+        """Compute MD5 hash of a prompt for cache lookup."""
+        return hashlib.md5(prompt.encode()).hexdigest()
 
-    def _load_from_cache(self, prompt: str) -> Optional[GeneratedImage]:
-        """Try to load image from cache."""
-        if not self.config.use_cache:
+    async def _check_cache(self, prompt: str, page_number: int) -> Optional[GeneratedImage]:
+        """Check DB + R2 for a cached image with the same prompt hash."""
+        if not self.config.use_cache or not self.cache_check_fn or not self.storage:
             return None
 
-        cache_path = self._get_cache_path(prompt)
-        if cache_path.exists():
-            try:
-                image_data = cache_path.read_bytes()
-                return GeneratedImage(
-                    success=True,
-                    image_path=str(cache_path),
-                    image_data=image_data,
-                    prompt_used=prompt,
-                    cached=True
-                )
-            except Exception:
-                return None
-        return None
+        prompt_hash = self.compute_prompt_hash(prompt)
+        cached_row = await self.cache_check_fn(prompt_hash)
+        if cached_row is None or not cached_row.r2_key:
+            return None
 
-    def _save_to_cache(self, prompt: str, image_data: bytes) -> str:
-        """Save image to cache and return path."""
-        cache_path = self._get_cache_path(prompt)
-        cache_path.write_bytes(image_data)
-        return str(cache_path)
+        # Download the cached image from R2
+        image_data = await self.storage.download_bytes(cached_row.r2_key)
+        if image_data is None:
+            return None
+
+        # Upload a copy under this book's key
+        new_key = f"images/{self.book_job_id}/page_{page_number}.png"
+        await self.storage.upload_bytes(image_data, new_key, "image/png")
+
+        return GeneratedImage(
+            success=True,
+            image_path=new_key,
+            image_data=image_data,
+            prompt_used=prompt,
+            cached=True,
+        )
+
+    async def _upload_image(self, image_data: bytes, page_number: int) -> str:
+        """Upload image bytes to R2 and return the R2 key."""
+        key = f"images/{self.book_job_id}/page_{page_number}.png"
+        await self.storage.upload_bytes(image_data, key, "image/png")
+        return key
 
     async def generate_image(
         self,
@@ -284,20 +291,7 @@ class BookImageGenerator:
         is_cover: bool = False,
         is_end: bool = False
     ) -> GeneratedImage:
-        """
-        Generate an image for a single page.
-
-        Args:
-            page_text: Text content of the page
-            page_number: Page number
-            total_pages: Total pages in book
-            story_context: Overall story summary
-            is_cover: Whether this is the cover
-            is_end: Whether this is the end page
-
-        Returns:
-            GeneratedImage with result
-        """
+        """Generate an image for a single page."""
         # Build prompt
         prompt_builder = ImagePromptBuilder(
             style=self.config.image_style,
@@ -316,18 +310,18 @@ class BookImageGenerator:
             is_end=is_end
         )
 
-        # Check cache
-        cached = self._load_from_cache(prompt)
+        # Check cache (DB + R2)
+        cached = await self._check_cache(prompt, page_number)
         if cached:
             return cached
 
         # Generate new image
         result = await self.generator.generate(prompt)
 
-        # Save to cache if successful
-        if result.success and result.image_data and self.config.use_cache:
-            cache_path = self._save_to_cache(prompt, result.image_data)
-            result.image_path = cache_path
+        # Upload to R2 if successful and storage is configured
+        if result.success and result.image_data and self.storage and self.book_job_id:
+            r2_key = await self._upload_image(result.image_data, page_number)
+            result.image_path = r2_key
 
         return result
 
@@ -337,17 +331,7 @@ class BookImageGenerator:
         story_context: str = "",
         progress_callback: Optional[callable] = None,
     ) -> Dict[int, GeneratedImage]:
-        """
-        Generate images for all pages in parallel.
-
-        Args:
-            pages: List of page dicts with 'page_number', 'content', 'page_type'
-            story_context: Overall story summary
-            progress_callback: Optional callback(current, total, page_num)
-
-        Returns:
-            Dict mapping page_number to GeneratedImage
-        """
+        """Generate images for all pages in parallel."""
         results = {}
         total = len(pages)
 
@@ -402,27 +386,3 @@ class BookImageGenerator:
 
         logger.info(f"Image generation complete: {sum(1 for r in results.values() if r.success)}/{len(results)} successful")
         return results
-
-
-def create_image_generator(
-    api_key: Optional[str] = None,
-    book_config: Optional[BookConfig] = None,
-    **kwargs
-) -> BookImageGenerator:
-    """
-    Factory function to create an image generator.
-
-    Args:
-        api_key: OpenRouter API key (or use environment variable)
-        book_config: Book configuration
-        **kwargs: Additional config options
-
-    Returns:
-        Configured BookImageGenerator
-    """
-    config = ImageConfig(
-        api_key=api_key or "",
-        **kwargs
-    )
-
-    return BookImageGenerator(config, book_config)

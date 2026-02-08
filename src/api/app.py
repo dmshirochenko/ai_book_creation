@@ -30,20 +30,23 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler for startup/shutdown."""
-    logger.info("🚀 Application starting up...")
-    
-    # Startup: ensure output directory exists
+    logger.info("Application starting up...")
+
     import os
-    os.makedirs("output", exist_ok=True)
-    os.makedirs("image_cache", exist_ok=True)
-    logger.info("📁 Output directories ready: output/, image_cache/")
-    
+    from src.core.storage import is_r2_configured
+
     # Check for API key
     if os.getenv("OPENROUTER_API_KEY"):
-        logger.info("✅ OpenRouter API key configured")
+        logger.info("OpenRouter API key configured")
     else:
-        logger.warning("⚠️  No OpenRouter API key found - LLM/image features disabled")
-    
+        logger.warning("No OpenRouter API key found - LLM/image features disabled")
+
+    # Check R2 storage
+    if is_r2_configured():
+        logger.info("Cloudflare R2 storage configured")
+    else:
+        logger.warning("R2 storage not configured - file storage will fail")
+
     # Initialize database
     await init_db()
 
@@ -51,7 +54,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown: cleanup
     await close_db()
-    logger.info("👋 Application shutting down...")
+    logger.info("Application shutting down...")
 
 
 app = FastAPI(

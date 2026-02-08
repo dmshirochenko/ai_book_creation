@@ -4,12 +4,14 @@ Book generation endpoints.
 
 import os
 import uuid
+import hashlib
 import logging
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
-from fastapi.responses import FileResponse
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.schemas import (
@@ -27,6 +29,7 @@ from src.core.config import BookConfig, LLMConfig
 from src.core.llm_connector import analyze_story_for_visuals
 from src.core.text_processor import TextProcessor, validate_book_content
 from src.core.pdf_generator import generate_both_pdfs
+from src.core.storage import get_storage
 from src.db.engine import get_session_factory
 from src.db import repository as repo
 
@@ -34,8 +37,6 @@ from src.db import repository as repo
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/books", tags=["Books"])
-
-OUTPUT_DIR = "output"
 
 
 async def _generate_book_task(
@@ -52,6 +53,8 @@ async def _generate_book_task(
     if session_factory is None:
         logger.error(f"[{job_id}] Database not initialized, cannot run background task")
         return
+
+    storage = get_storage()
 
     async with session_factory() as session:
         try:
@@ -170,7 +173,19 @@ async def _generate_book_task(
 
                 if image_config.validate():
                     logger.info(f"[{job_id}] Image config valid, model: {request.image_model}")
-                    image_generator = BookImageGenerator(image_config, book_config, visual_context)
+
+                    # DB-backed cache check function for cross-book cache
+                    async def cache_check_fn(prompt_hash: str):
+                        return await repo.find_cached_image_by_hash(session, prompt_hash)
+
+                    image_generator = BookImageGenerator(
+                        image_config,
+                        book_config,
+                        visual_context,
+                        storage=storage,
+                        book_job_id=job_id,
+                        cache_check_fn=cache_check_fn,
+                    )
 
                     page_data = [
                         {
@@ -198,10 +213,31 @@ async def _generate_book_task(
                     )
                     logger.info(f"[{job_id}] Image results: {[(pn, r.success, r.error if not r.success else 'OK') for pn, r in image_results.items()]}")
 
+                    # Create DB rows for generated images
                     images = {}
                     for page_num, result in image_results.items():
+                        prompt_hash = hashlib.md5(
+                            (result.prompt_used or "").encode()
+                        ).hexdigest()
+                        file_size = len(result.image_data) if result.image_data else None
+
+                        await repo.create_generated_image(
+                            session,
+                            book_job_id=uuid.UUID(job_id),
+                            user_id=user_id,
+                            page_number=page_num,
+                            prompt=result.prompt_used or "",
+                            prompt_hash=prompt_hash,
+                            status="completed" if result.success else "failed",
+                            r2_key=result.image_path if result.success else None,
+                            file_size_bytes=file_size,
+                            error=result.error,
+                            cached=result.cached,
+                        )
+
                         if result.success and result.image_data:
                             images[page_num] = result.image_data
+
                     logger.info(f"[{job_id}] Generated {len(images)} images successfully")
                 else:
                     logger.warning(f"[{job_id}] Image config invalid (missing API key?)")
@@ -213,8 +249,6 @@ async def _generate_book_task(
                 progress="Generating PDF files...",
             )
 
-            os.makedirs(OUTPUT_DIR, exist_ok=True)
-
             # Generate filenames
             safe_title = "".join(
                 c if c.isalnum() or c in " -_" else "_" for c in book_content.title
@@ -225,29 +259,40 @@ async def _generate_book_task(
             booklet_filename = f"{safe_title}_{timestamp}_booklet.pdf"
             review_filename = f"{safe_title}_{timestamp}_review.pdf"
 
-            booklet_path = str(Path(OUTPUT_DIR) / booklet_filename)
-            review_path = str(Path(OUTPUT_DIR) / review_filename)
+            # Generate PDFs in a temp directory, then upload to R2
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                booklet_path = str(Path(tmp_dir) / booklet_filename)
+                review_path = str(Path(tmp_dir) / review_filename)
 
-            generate_both_pdfs(
-                content=book_content,
-                booklet_path=booklet_path,
-                review_path=review_path,
-                config=book_config,
-                images=images,
-            )
-            logger.info(f"[{job_id}] PDFs generated: {booklet_filename}, {review_filename}")
+                generate_both_pdfs(
+                    content=book_content,
+                    booklet_path=booklet_path,
+                    review_path=review_path,
+                    config=book_config,
+                    images=images,
+                )
+                logger.info(f"[{job_id}] PDFs generated: {booklet_filename}, {review_filename}")
 
-            # Store PDF metadata
-            booklet_size = os.path.getsize(booklet_path) if os.path.exists(booklet_path) else None
-            review_size = os.path.getsize(review_path) if os.path.exists(review_path) else None
+                # Upload to R2
+                booklet_r2_key = f"pdfs/{job_id}/{booklet_filename}"
+                review_r2_key = f"pdfs/{job_id}/{review_filename}"
 
+                booklet_size = await storage.upload_file(
+                    booklet_path, booklet_r2_key, "application/pdf"
+                )
+                review_size = await storage.upload_file(
+                    review_path, review_r2_key, "application/pdf"
+                )
+                logger.info(f"[{job_id}] PDFs uploaded to R2")
+
+            # Store PDF metadata with R2 keys
             await repo.create_generated_pdf(
                 session,
                 book_job_id=uuid.UUID(job_id),
                 user_id=user_id,
                 pdf_type="booklet",
                 filename=booklet_filename,
-                file_path=booklet_path,
+                file_path=booklet_r2_key,
                 page_count=book_content.total_pages,
                 file_size_bytes=booklet_size,
             )
@@ -257,7 +302,7 @@ async def _generate_book_task(
                 user_id=user_id,
                 pdf_type="review",
                 filename=review_filename,
-                file_path=review_path,
+                file_path=review_r2_key,
                 page_count=book_content.total_pages,
                 file_size_bytes=review_size,
             )
@@ -383,6 +428,7 @@ async def get_job_status(
 @router.get(
     "/{job_id}/download/{pdf_type}",
     responses={
+        307: {"description": "Redirect to presigned R2 URL"},
         404: {"model": ErrorResponse},
         400: {"model": ErrorResponse},
     },
@@ -392,9 +438,9 @@ async def download_book(
     pdf_type: str,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
-) -> FileResponse:
+) -> RedirectResponse:
     """
-    Download a generated PDF.
+    Download a generated PDF via presigned R2 URL redirect.
 
     - `pdf_type`: Either "booklet" (for printing) or "review" (for screen reading)
     """
@@ -421,16 +467,13 @@ async def download_book(
     if not filename:
         raise HTTPException(status_code=404, detail="PDF file not found")
 
-    file_path = Path(OUTPUT_DIR) / filename
-
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="PDF file not found on disk")
-
-    return FileResponse(
-        path=str(file_path),
-        filename=filename,
-        media_type="application/pdf",
+    r2_key = f"pdfs/{job_id}/{filename}"
+    storage = get_storage()
+    presigned_url = await storage.generate_presigned_url(
+        r2_key, expiration=3600, response_filename=filename
     )
+
+    return RedirectResponse(url=presigned_url, status_code=307)
 
 
 @router.get(
@@ -469,24 +512,19 @@ async def delete_job(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
-    Delete a job and its associated PDF files.
+    Delete a job and its associated files from R2.
     """
     job = await repo.get_book_job_for_user(db, uuid.UUID(job_id), user_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # Delete PDF files if they exist
-    if job.booklet_filename:
-        booklet_path = Path(OUTPUT_DIR) / job.booklet_filename
-        if booklet_path.exists():
-            booklet_path.unlink()
+    storage = get_storage()
 
-    if job.review_filename:
-        review_path = Path(OUTPUT_DIR) / job.review_filename
-        if review_path.exists():
-            review_path.unlink()
+    # Delete R2 objects: images and PDFs for this job
+    await storage.delete_prefix(f"images/{job_id}/")
+    await storage.delete_prefix(f"pdfs/{job_id}/")
 
-    # Delete from database (cascades to generated_pdfs)
+    # Delete from database (cascades to generated_pdfs and generated_images)
     await repo.delete_book_job(db, uuid.UUID(job_id))
 
     return {"message": f"Job {job_id} deleted successfully"}
