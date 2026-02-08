@@ -33,6 +33,10 @@ class BookGenerateRequest(BaseModel):
     use_image_cache: bool = Field(True, description="Use cached images if available")
     text_on_image: bool = Field(False, description="Render story text directly on images")
     background_color: Optional[str] = Field(None, description="PDF background color as hex (e.g., '#FFF8E7' for cream, '#F0F8FF' for light blue)")
+    font_family: str = Field("DejaVuSans", description="Font family for PDF text (Unicode-compatible)")
+    margin_top: int = Field(50, ge=10, le=150, description="Top margin in points (72 points = 1 inch)")
+    margin_left: int = Field(40, ge=10, le=150, description="Left margin in points")
+    margin_right: int = Field(40, ge=10, le=150, description="Right margin in points")
 
     model_config = {
         "json_schema_extra": {
