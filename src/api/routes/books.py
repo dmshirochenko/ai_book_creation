@@ -18,6 +18,8 @@ from src.api.schemas import (
     BookGenerateRequest,
     BookGenerateResponse,
     BookRegenerateResponse,
+    BookImageStatusResponse,
+    FailedImageItem,
     JobStatus,
     BookListItem,
     BookListResponse,
@@ -627,6 +629,50 @@ async def regenerate_book(
         message=f"Regeneration started. Retrying {len(failed_images)} failed images.",
     )
     return JSONResponse(content=response.model_dump(), status_code=202)
+
+
+@router.get(
+    "/{job_id}/images/status",
+    response_model=BookImageStatusResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+    },
+)
+async def get_image_status(
+    job_id: str,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> BookImageStatusResponse:
+    """
+    Check if a completed book has any failed images.
+
+    Used by the frontend to determine whether to show a "retry" button
+    for the book's failed illustrations.
+    """
+    job = await repo.get_book_job_for_user(db, uuid.UUID(job_id), user_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status in ("pending", "processing"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot check image status: job is still {job.status}",
+        )
+
+    all_images = await repo.get_images_for_book(db, uuid.UUID(job_id))
+    failed_images = await repo.get_failed_images_for_book(db, uuid.UUID(job_id))
+
+    return BookImageStatusResponse(
+        job_id=job_id,
+        total_images=len(all_images),
+        failed_images=len(failed_images),
+        has_failed_images=len(failed_images) > 0,
+        failed_pages=[
+            FailedImageItem(page_number=img.page_number, error=img.error)
+            for img in failed_images
+        ],
+    )
 
 
 @router.get(
