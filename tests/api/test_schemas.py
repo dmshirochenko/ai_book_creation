@@ -9,6 +9,8 @@ from src.api.schemas import (
     BookGenerateResponse,
     BookListItem,
     BookListResponse,
+    GeneratedBookItem,
+    GeneratedBookListResponse,
     ErrorResponse,
     HealthResponse,
     StoryCreateRequest,
@@ -183,3 +185,44 @@ class TestResponseModels:
     def test_story_create_response(self):
         resp = StoryCreateResponse(job_id="xyz", message="Started")
         assert resp.job_id == "xyz"
+
+    def test_generated_book_item(self):
+        item = GeneratedBookItem(
+            job_id="abc",
+            title="My Book",
+            booklet_url="/api/v1/books/abc/download/booklet",
+            review_url="/api/v1/books/abc/download/review",
+            created_at="2024-01-01T00:00:00+00:00",
+        )
+        assert item.job_id == "abc"
+        assert item.title == "My Book"
+        assert "booklet" in item.booklet_url
+        assert "review" in item.review_url
+
+    def test_generated_book_list_response(self):
+        items = [
+            GeneratedBookItem(
+                job_id="a",
+                title="Book A",
+                booklet_url="/api/v1/books/a/download/booklet",
+                review_url="/api/v1/books/a/download/review",
+                created_at="2024-01-01",
+            )
+        ]
+        resp = GeneratedBookListResponse(books=items, total=1)
+        assert resp.total == 1
+        assert len(resp.books) == 1
+        assert resp.books[0].title == "Book A"
+
+    def test_generated_book_list_response_empty(self):
+        resp = GeneratedBookListResponse(books=[], total=0)
+        assert resp.total == 0
+        assert resp.books == []
+
+    def test_generated_book_item_missing_required_field(self):
+        with pytest.raises(ValidationError):
+            GeneratedBookItem(
+                job_id="abc",
+                title="My Book",
+                # missing booklet_url, review_url, created_at
+            )
