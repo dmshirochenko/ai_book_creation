@@ -174,9 +174,13 @@ async def _generate_book_task(
                 if image_config.validate():
                     logger.info(f"[{job_id}] Image config valid, model: {request.image_model}")
 
-                    # DB-backed cache check function for cross-book cache
+                    # DB-backed cache check function for cross-book cache.
+                    # Uses its own session per call because asyncio.gather()
+                    # runs these concurrently and a single async session
+                    # cannot handle concurrent operations.
                     async def cache_check_fn(prompt_hash: str):
-                        return await repo.find_cached_image_by_hash(session, prompt_hash)
+                        async with session_factory() as cache_session:
+                            return await repo.find_cached_image_by_hash(cache_session, prompt_hash)
 
                     image_generator = BookImageGenerator(
                         image_config,
@@ -319,12 +323,23 @@ async def _generate_book_task(
 
         except Exception as e:
             logger.error(f"[{job_id}] Book generation failed: {str(e)}", exc_info=True)
-            await repo.update_book_job(
-                session, uuid.UUID(job_id),
-                status="failed",
-                error=str(e),
-                progress=f"Failed: {str(e)}",
-            )
+            # Use a fresh session to record the failure — the original
+            # session may be in a broken state (e.g. after a concurrent
+            # operation error), which would prevent updating the job and
+            # leave it stuck in "processing" forever.
+            try:
+                async with session_factory() as err_session:
+                    await repo.update_book_job(
+                        err_session, uuid.UUID(job_id),
+                        status="failed",
+                        error=str(e),
+                        progress=f"Failed: {str(e)}",
+                    )
+            except Exception as err_exc:
+                logger.error(
+                    f"[{job_id}] Could not record failure status: {err_exc}",
+                    exc_info=True,
+                )
 
 
 @router.post(
