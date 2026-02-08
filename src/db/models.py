@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Boolean,
     String,
     Integer,
     BigInteger,
@@ -57,6 +58,9 @@ class BookJob(Base):
 
     # Relationships
     pdfs: Mapped[list["GeneratedPdf"]] = relationship(
+        back_populates="book_job", cascade="all, delete-orphan"
+    )
+    images: Mapped[list["GeneratedImage"]] = relationship(
         back_populates="book_job", cascade="all, delete-orphan"
     )
     story_job: Mapped["StoryJob | None"] = relationship(back_populates="book_job")
@@ -162,4 +166,49 @@ class GeneratedPdf(Base):
         ),
         Index("idx_generated_pdfs_user_id", "user_id"),
         Index("idx_generated_pdfs_book_job_id", "book_job_id"),
+    )
+
+
+class GeneratedImage(Base):
+    __tablename__ = "generated_images"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    book_job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("book_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_hash: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending"
+    )
+    r2_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    file_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cached: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    # Relationships
+    book_job: Mapped["BookJob"] = relationship(back_populates="images")
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'completed', 'failed')",
+            name="ck_generated_images_status",
+        ),
+        Index("idx_generated_images_book_job_id", "book_job_id"),
+        Index("idx_generated_images_prompt_hash", "prompt_hash"),
+        Index("idx_generated_images_user_id", "user_id"),
     )

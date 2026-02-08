@@ -83,14 +83,8 @@ class LLMConfig:
 @dataclass
 class GeneratorConfig:
     """Main configuration combining all settings."""
-    
+
     book: BookConfig = field(default_factory=BookConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
-    
-    # Output settings
-    output_dir: str = "output"
+
     debug_mode: bool = False
-    
-    def __post_init__(self):
-        """Ensure output directory exists."""
-        os.makedirs(self.output_dir, exist_ok=True)

@@ -24,3 +24,6 @@ python-multipart>=0.0.6
 sqlalchemy[asyncio]>=2.0.0
 asyncpg>=0.29.0
 alembic>=1.13.0
+
+# Cloud storage (Cloudflare R2, S3-compatible)
+aioboto3>=13.0.0

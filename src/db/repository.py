@@ -8,7 +8,7 @@ from typing import Optional
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import BookJob, StoryJob, GeneratedPdf
+from src.db.models import BookJob, StoryJob, GeneratedPdf, GeneratedImage
 
 
 # ========================
@@ -192,3 +192,82 @@ async def create_generated_pdf(
     await session.commit()
     await session.refresh(pdf)
     return pdf
+
+
+# ========================
+# GENERATED IMAGES
+# ========================
+
+
+async def create_generated_image(
+    session: AsyncSession,
+    *,
+    book_job_id: uuid.UUID,
+    user_id: uuid.UUID,
+    page_number: int,
+    prompt: str,
+    prompt_hash: str,
+    status: str = "pending",
+    r2_key: Optional[str] = None,
+    file_size_bytes: Optional[int] = None,
+    error: Optional[str] = None,
+    cached: bool = False,
+) -> GeneratedImage:
+    image = GeneratedImage(
+        book_job_id=book_job_id,
+        user_id=user_id,
+        page_number=page_number,
+        prompt=prompt,
+        prompt_hash=prompt_hash,
+        status=status,
+        r2_key=r2_key,
+        file_size_bytes=file_size_bytes,
+        error=error,
+        cached=cached,
+    )
+    session.add(image)
+    await session.commit()
+    await session.refresh(image)
+    return image
+
+
+async def update_generated_image(
+    session: AsyncSession,
+    image_id: uuid.UUID,
+    **kwargs,
+) -> None:
+    await session.execute(
+        update(GeneratedImage)
+        .where(GeneratedImage.id == image_id)
+        .values(**kwargs)
+    )
+    await session.commit()
+
+
+async def find_cached_image_by_hash(
+    session: AsyncSession,
+    prompt_hash: str,
+) -> Optional[GeneratedImage]:
+    """Find any completed image with a matching prompt hash (for cross-book cache)."""
+    result = await session.execute(
+        select(GeneratedImage)
+        .where(
+            GeneratedImage.prompt_hash == prompt_hash,
+            GeneratedImage.status == "completed",
+            GeneratedImage.r2_key.isnot(None),
+        )
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_images_for_book(
+    session: AsyncSession,
+    book_job_id: uuid.UUID,
+) -> list[GeneratedImage]:
+    result = await session.execute(
+        select(GeneratedImage)
+        .where(GeneratedImage.book_job_id == book_job_id)
+        .order_by(GeneratedImage.page_number)
+    )
+    return list(result.scalars().all())
