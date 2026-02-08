@@ -5,19 +5,23 @@ This module handles AI image generation for each page of the book
 using OpenRouter API.
 """
 
+from __future__ import annotations
+
 import os
 import asyncio
 import httpx
 import base64
 import hashlib
 import logging
-from typing import Optional, List, Dict, Any, Callable, Awaitable
+from typing import Optional, List, Dict, Any, Callable, Awaitable, TYPE_CHECKING
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
 from src.core.config import DEFAULT_IMAGE_MODEL
-from src.api.schemas import BookGenerateRequest
+
+if TYPE_CHECKING:
+    from src.api.schemas import BookGenerateRequest
 from src.core.prompts import (
     build_cover_image_prompt,
     build_end_page_image_prompt,
@@ -234,7 +238,10 @@ class BookImageGenerator:
         cache_check_fn: Optional[Callable[[str], Awaitable[Any]]] = None,
     ):
         self.config = config
-        self.book_config = book_config or BookGenerateRequest(story="")
+        if book_config is None:
+            from src.api.schemas import BookGenerateRequest as _BGReq
+            book_config = _BGReq(story="")
+        self.book_config = book_config
         self.visual_context = visual_context
         self.storage = storage
         self.book_job_id = book_job_id
