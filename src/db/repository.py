@@ -271,3 +271,58 @@ async def get_images_for_book(
         .order_by(GeneratedImage.page_number)
     )
     return list(result.scalars().all())
+
+
+async def get_failed_images_for_book(
+    session: AsyncSession,
+    book_job_id: uuid.UUID,
+) -> list[GeneratedImage]:
+    """Get all failed images for a book job."""
+    result = await session.execute(
+        select(GeneratedImage)
+        .where(
+            GeneratedImage.book_job_id == book_job_id,
+            GeneratedImage.status == "failed",
+        )
+        .order_by(GeneratedImage.page_number)
+    )
+    return list(result.scalars().all())
+
+
+async def reset_image_for_retry(
+    session: AsyncSession,
+    image_id: uuid.UUID,
+    retry_attempt: int,
+) -> None:
+    """Reset a failed image to pending for retry."""
+    from datetime import datetime, timezone
+
+    await session.execute(
+        update(GeneratedImage)
+        .where(GeneratedImage.id == image_id)
+        .values(
+            status="pending",
+            error=None,
+            retry_attempt=retry_attempt,
+            retried_at=datetime.now(timezone.utc),
+        )
+    )
+    await session.commit()
+
+
+async def delete_pdfs_for_book(
+    session: AsyncSession,
+    book_job_id: uuid.UUID,
+) -> list[str]:
+    """Delete all PDF rows for a book and return their R2 keys for cleanup."""
+    result = await session.execute(
+        select(GeneratedPdf).where(GeneratedPdf.book_job_id == book_job_id)
+    )
+    pdfs = result.scalars().all()
+    r2_keys = [pdf.file_path for pdf in pdfs]
+
+    await session.execute(
+        delete(GeneratedPdf).where(GeneratedPdf.book_job_id == book_job_id)
+    )
+    await session.commit()
+    return r2_keys

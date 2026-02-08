@@ -193,6 +193,12 @@ class GeneratedImage(Base):
     file_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     cached: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    retry_attempt: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    retried_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
