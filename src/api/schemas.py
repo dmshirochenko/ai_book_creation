@@ -75,6 +75,15 @@ class BookGenerateResponse(BaseModel):
     message: str = Field(..., description="Status message")
 
 
+class BookRegenerateResponse(BaseModel):
+    """Response schema for book regeneration request."""
+
+    job_id: str = Field(..., description="Book job identifier")
+    status: str = Field(..., description="New job status")
+    failed_image_count: int = Field(..., description="Number of failed images to retry")
+    message: str = Field(..., description="Status message")
+
+
 class BookListItem(BaseModel):
     """Item in the list of generated books."""
     
