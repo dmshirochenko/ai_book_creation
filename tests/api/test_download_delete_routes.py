@@ -194,11 +194,9 @@ class TestDownloadBook:
 class TestDeleteJob:
     """Tests for DELETE /api/v1/books/{job_id}."""
 
-    async def test_deletes_r2_objects_and_db_row(self, client):
+    async def test_soft_deletes_book_job(self, client):
         job = _make_book_job()
-        mock_storage = AsyncMock()
-        mock_storage.delete_prefix = AsyncMock(return_value=3)
-        mock_delete_job = AsyncMock()
+        mock_update_job = AsyncMock()
 
         with (
             patch(
@@ -206,24 +204,19 @@ class TestDeleteJob:
                 new_callable=AsyncMock,
                 return_value=job,
             ),
-            patch("src.api.routes.books.get_storage", return_value=mock_storage),
             patch(
-                "src.api.routes.books.repo.delete_book_job",
-                mock_delete_job,
+                "src.api.routes.books.repo.update_book_job",
+                mock_update_job,
             ),
         ):
             resp = await client.delete(f"/api/v1/books/{_TEST_JOB_ID}")
             assert resp.status_code == 200
             assert "deleted" in resp.json()["message"].lower()
 
-            # Verify R2 prefixes were cleaned
-            calls = mock_storage.delete_prefix.call_args_list
-            prefixes = [c.args[0] for c in calls]
-            assert f"images/{_TEST_JOB_ID}/" in prefixes
-            assert f"pdfs/{_TEST_JOB_ID}/" in prefixes
-
-            # Verify DB deletion
-            mock_delete_job.assert_awaited_once()
+            # Verify status was set to 'deleted'
+            mock_update_job.assert_awaited_once()
+            call_kwargs = mock_update_job.call_args
+            assert call_kwargs.kwargs["status"] == "deleted"
 
     async def test_job_not_found_returns_404(self, client):
         with patch(

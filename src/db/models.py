@@ -67,7 +67,7 @@ class BookJob(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'processing', 'completed', 'failed')",
+            "status IN ('pending', 'processing', 'completed', 'failed', 'deleted')",
             name="ck_book_jobs_status",
         ),
         Index("idx_book_jobs_user_id", "user_id"),

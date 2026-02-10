@@ -818,19 +818,12 @@ async def delete_job(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
-    Delete a job and its associated files from R2.
+    Soft-delete a job by setting its status to 'deleted'.
     """
     job = await repo.get_book_job_for_user(db, uuid.UUID(job_id), user_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    storage = get_storage()
-
-    # Delete R2 objects: images and PDFs for this job
-    await storage.delete_prefix(f"images/{job_id}/")
-    await storage.delete_prefix(f"pdfs/{job_id}/")
-
-    # Delete from database (cascades to generated_pdfs and generated_images)
-    await repo.delete_book_job(db, uuid.UUID(job_id))
+    await repo.update_book_job(db, uuid.UUID(job_id), status="deleted")
 
     return {"message": f"Job {job_id} deleted successfully"}
