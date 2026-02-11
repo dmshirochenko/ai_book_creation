@@ -58,6 +58,18 @@ POST /stories/create → Structured JSON generation (Gemini Flash) → Book PDF
 | `src/api/schemas.py` | Pydantic models: `BookGenerateRequest`, `JobStatus` |
 | `src/api/routes/books.py` | All book generation endpoints and background task logic |
 
+## Database
+
+- **Migrations**: Always use Alembic with manually written migration scripts. Do NOT use `Base.metadata.create_all()` for schema changes or attempt autogenerate without a live DB connection.
+- **Production**: Uses Supabase with pgbouncer — requires `statement_cache_size=0` for asyncpg connections.
+- **Sessions**: Use async SQLAlchemy sessions. Avoid sharing sessions across concurrent tasks (use `asyncio.gather()` carefully).
+
+## Testing
+
+- Run the full test suite after any code changes: `python -m pytest tests/ -v`
+- The project has 225+ tests — verify all pass before committing.
+- After refactors or removals, run tests immediately to catch circular imports and broken references.
+
 ## Conventions
 
 - **Single API provider**: OpenRouter handles story generation (Gemini Flash), analysis (Gemini), and image generation. One `OPENROUTER_API_KEY` covers everything.
