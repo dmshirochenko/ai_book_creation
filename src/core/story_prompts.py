@@ -211,9 +211,20 @@ You MUST follow these rules strictly. Violations will result in the story being 
    - Avoid any recognizable franchise elements or settings
    - If the user's prompt mentions copyrighted characters, CREATE NEW ORIGINAL CHARACTERS INSTEAD
 
-5. **Refusal Protocol**:
-   - If the user's prompt asks for inappropriate content, politely refuse
-   - Set the title to "I cannot create that story" and include the reason in a single page
+5. **Safety Status**:
+   - You MUST set "safety_status" to "safe" if the story is appropriate for the target age group
+   - You MUST set "safety_status" to "unsafe" if the user's prompt asks for:
+     * Violent, scary, or harmful content
+     * Content involving copyrighted characters (Disney, Marvel, etc.)
+     * Adult themes, profanity, or age-inappropriate material
+     * Any content you would not feel comfortable showing to a young child
+   - If "safety_status" is "unsafe":
+     * Set "safety_reasoning" to a short, parent-friendly explanation (1-2 sentences) of why the story cannot be created
+     * Set "title" to an empty string
+     * Set "pages" to an empty array
+   - If "safety_status" is "safe":
+     * Set "safety_reasoning" to an empty string
+     * Generate the full story as normal
 
 ---
 
@@ -245,9 +256,9 @@ USER'S STORY PROMPT:
 ---
 
 YOUR TASK:
-Generate an original, safe, engaging story based on the user's prompt. If the prompt is inappropriate or contains copyrighted characters, follow the refusal protocol above.
+Generate an original, safe, engaging story based on the user's prompt. Always set the safety_status field. If the prompt is inappropriate or contains copyrighted characters, set safety_status to "unsafe" with a clear safety_reasoning, and return empty title and pages.
 
-Return the story as structured JSON with a title and an array of pages."""
+Return the story as structured JSON with safety_status, safety_reasoning, title, and an array of pages."""
 
 
 # =============================================================================
@@ -260,13 +271,22 @@ STORY_OUTPUT_JSON_SCHEMA = {
     "schema": {
         "type": "object",
         "properties": {
+            "safety_status": {
+                "type": "string",
+                "enum": ["safe", "unsafe"],
+                "description": "Whether the generated story is safe for children. Set to 'unsafe' if the prompt asks for inappropriate, violent, or copyrighted content."
+            },
+            "safety_reasoning": {
+                "type": "string",
+                "description": "If safety_status is 'unsafe', a short explanation of why. If 'safe', set to an empty string."
+            },
             "title": {
                 "type": "string",
                 "description": "The story title, simple and engaging, 2-6 words"
             },
             "pages": {
                 "type": "array",
-                "description": "Ordered list of story pages",
+                "description": "Ordered list of story pages. If safety_status is 'unsafe', return an empty array.",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -280,7 +300,7 @@ STORY_OUTPUT_JSON_SCHEMA = {
                 }
             }
         },
-        "required": ["title", "pages"],
+        "required": ["safety_status", "safety_reasoning", "title", "pages"],
         "additionalProperties": False
     }
 }
@@ -307,9 +327,9 @@ def parse_story_output_response(response_text: str) -> dict:
         response_text: Raw text response from LLM (should be valid JSON with structured outputs)
 
     Returns:
-        Dict with "title" (str) and "pages" (list of {"text": str}), or empty structure on failure
+        Dict with "safety_status", "safety_reasoning", "title", and "pages", or empty structure on failure
     """
-    empty = {"title": "", "pages": []}
+    empty = {"title": "", "pages": [], "safety_status": "safe", "safety_reasoning": ""}
 
     try:
         text = response_text.strip()
@@ -330,6 +350,8 @@ def parse_story_output_response(response_text: str) -> dict:
             logger.error("Story response is not a JSON object")
             return empty
 
+        safety_status = data.get("safety_status", "safe")
+        safety_reasoning = data.get("safety_reasoning", "")
         title = data.get("title", "")
         pages = data.get("pages", [])
 
@@ -343,7 +365,12 @@ def parse_story_output_response(response_text: str) -> dict:
             if isinstance(page, dict) and "text" in page:
                 normalized_pages.append({"text": str(page["text"])})
 
-        return {"title": str(title), "pages": normalized_pages}
+        return {
+            "safety_status": str(safety_status),
+            "safety_reasoning": str(safety_reasoning),
+            "title": str(title),
+            "pages": normalized_pages,
+        }
 
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         logger.error(f"Failed to parse story output: {e}")

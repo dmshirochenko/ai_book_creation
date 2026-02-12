@@ -93,6 +93,8 @@ async def _create_story_task(
                     status="failed",
                     error=result.error,
                     progress=f"Failed: {result.error}",
+                    safety_status=result.safety_status,
+                    safety_reasoning=result.safety_reasoning,
                 )
                 return
 
@@ -106,6 +108,8 @@ async def _create_story_task(
                 generated_story_json=result.story_structured,
                 story_length=result.page_count,
                 tokens_used=result.tokens_used,
+                safety_status=result.safety_status,
+                safety_reasoning=result.safety_reasoning,
             )
 
             logger.info(f"[{job_id}] Story created: '{result.title}', {result.page_count} pages, {result.tokens_used} tokens")
@@ -258,6 +262,8 @@ async def get_story_status(
         status=job.status,
         progress=job.progress,
         error=job.error,
+        safety_status=job.safety_status,
+        safety_reasoning=job.safety_reasoning,
         generated_title=job.generated_title,
         generated_story=job.generated_story,
         generated_story_json=job.generated_story_json,
