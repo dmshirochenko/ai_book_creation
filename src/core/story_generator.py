@@ -39,6 +39,8 @@ class StoryGenerationResult:
     tokens_used: int = 0
     error: Optional[str] = None
     safety_violations: List[str] = field(default_factory=list)
+    safety_status: str = "safe"
+    safety_reasoning: str = ""
 
 
 # =============================================================================
@@ -114,7 +116,9 @@ class StoryGenerator:
             return StoryGenerationResult(
                 success=False,
                 error=f"Safety violation detected: {', '.join(violations)}",
-                safety_violations=violations
+                safety_violations=violations,
+                safety_status="unsafe",
+                safety_reasoning=f"Your prompt contains content that is not allowed: {', '.join(violations)}",
             )
 
         # Build prompt with safety instructions
@@ -147,19 +151,48 @@ class StoryGenerator:
         parsed = parse_story_output_response(response.content)
 
         if not parsed["title"] and not parsed["pages"]:
+            # Check if this is an unsafe response (empty title/pages is expected for unsafe)
+            if parsed.get("safety_status") == "unsafe":
+                safety_reasoning = parsed.get("safety_reasoning", "")
+                logger.warning(f"LLM flagged story as unsafe: {safety_reasoning}")
+                return StoryGenerationResult(
+                    success=False,
+                    error=f"Story content is not suitable: {safety_reasoning}",
+                    safety_violations=["LLM safety check: " + safety_reasoning],
+                    safety_status="unsafe",
+                    safety_reasoning=safety_reasoning,
+                    tokens_used=response.tokens_used,
+                )
             logger.error("Failed to parse story JSON response")
             return StoryGenerationResult(
                 success=False,
                 error="Failed to parse story response"
             )
 
-        # Check if LLM refused the request (title contains refusal pattern)
+        # Check safety status from LLM response
+        safety_status = parsed.get("safety_status", "safe")
+        safety_reasoning = parsed.get("safety_reasoning", "")
+
+        if safety_status == "unsafe":
+            logger.warning(f"LLM flagged story as unsafe: {safety_reasoning}")
+            return StoryGenerationResult(
+                success=False,
+                error=f"Story content is not suitable: {safety_reasoning}",
+                safety_violations=["LLM safety check: " + safety_reasoning],
+                safety_status="unsafe",
+                safety_reasoning=safety_reasoning,
+                tokens_used=response.tokens_used,
+            )
+
+        # Check if LLM refused the request (title contains refusal pattern — fallback)
         if is_refusal_response(parsed["title"]):
             logger.warning("LLM refused to generate story due to safety concerns")
             return StoryGenerationResult(
                 success=False,
                 error="Story request was rejected by the AI due to safety concerns",
-                safety_violations=["LLM refused to generate content"]
+                safety_violations=["LLM refused to generate content"],
+                safety_status="unsafe",
+                safety_reasoning="The AI determined this story prompt is not suitable for children.",
             )
 
         # Check for empty pages (another refusal indicator)
@@ -182,7 +215,8 @@ class StoryGenerator:
             story=formatted_story,
             story_structured=parsed,
             page_count=len(story_lines),
-            tokens_used=response.tokens_used
+            tokens_used=response.tokens_used,
+            safety_status="safe",
         )
 
 

@@ -156,6 +156,8 @@ class TestGetStoryCreationResponseFormat:
         fmt = get_story_creation_response_format()
         assert fmt["type"] == "json_schema"
         schema = fmt["json_schema"]["schema"]
+        assert "safety_status" in schema["properties"]
+        assert "safety_reasoning" in schema["properties"]
         assert "title" in schema["properties"]
         assert "pages" in schema["properties"]
 
@@ -168,6 +170,8 @@ class TestGetStoryCreationResponseFormat:
 class TestParseStoryOutputResponse:
     def test_valid_json(self):
         data = {
+            "safety_status": "safe",
+            "safety_reasoning": "",
             "title": "Happy Fox",
             "pages": [
                 {"text": "Page one."},
@@ -177,24 +181,50 @@ class TestParseStoryOutputResponse:
         result = parse_story_output_response(json.dumps(data))
         assert result["title"] == "Happy Fox"
         assert len(result["pages"]) == 2
+        assert result["safety_status"] == "safe"
+        assert result["safety_reasoning"] == ""
+
+    def test_unsafe_response(self):
+        data = {
+            "safety_status": "unsafe",
+            "safety_reasoning": "The prompt contains violent content.",
+            "title": "",
+            "pages": [],
+        }
+        result = parse_story_output_response(json.dumps(data))
+        assert result["safety_status"] == "unsafe"
+        assert result["safety_reasoning"] == "The prompt contains violent content."
+        assert result["title"] == ""
+        assert result["pages"] == []
+
+    def test_missing_safety_fields_defaults_to_safe(self):
+        data = {
+            "title": "Happy Fox",
+            "pages": [{"text": "Page one."}],
+        }
+        result = parse_story_output_response(json.dumps(data))
+        assert result["safety_status"] == "safe"
+        assert result["safety_reasoning"] == ""
+        assert result["title"] == "Happy Fox"
 
     def test_markdown_wrapped(self):
-        data = {"title": "T", "pages": [{"text": "P"}]}
+        data = {"safety_status": "safe", "safety_reasoning": "", "title": "T", "pages": [{"text": "P"}]}
         wrapped = f"```json\n{json.dumps(data)}\n```"
         result = parse_story_output_response(wrapped)
         assert result["title"] == "T"
+        assert result["safety_status"] == "safe"
 
     def test_invalid_json(self):
         result = parse_story_output_response("not json")
-        assert result == {"title": "", "pages": []}
+        assert result == {"title": "", "pages": [], "safety_status": "safe", "safety_reasoning": ""}
 
     def test_not_a_dict(self):
         result = parse_story_output_response(json.dumps([1, 2, 3]))
-        assert result == {"title": "", "pages": []}
+        assert result == {"title": "", "pages": [], "safety_status": "safe", "safety_reasoning": ""}
 
     def test_pages_not_a_list(self):
         result = parse_story_output_response(json.dumps({"title": "T", "pages": "bad"}))
-        assert result == {"title": "", "pages": []}
+        assert result == {"title": "", "pages": [], "safety_status": "safe", "safety_reasoning": ""}
 
     def test_invalid_page_entries_skipped(self):
         data = {

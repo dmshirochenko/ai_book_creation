@@ -91,6 +91,9 @@ class StoryJob(Base):
     progress: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    safety_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    safety_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     generated_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     generated_story: Mapped[str | None] = mapped_column(Text, nullable=True)
     generated_story_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

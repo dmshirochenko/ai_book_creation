@@ -206,6 +206,10 @@ class StoryJobStatus(BaseModel):
     progress: Optional[str] = Field(None, description="Current progress message")
     error: Optional[str] = Field(None, description="Error message if failed")
 
+    # Safety fields
+    safety_status: Optional[str] = Field(None, description="Safety classification: 'safe' or 'unsafe'")
+    safety_reasoning: Optional[str] = Field(None, description="If unsafe, explains why the story was rejected")
+
     # Story-specific fields
     generated_title: Optional[str] = Field(None, description="LLM-generated story title")
     generated_story: Optional[str] = Field(None, description="Full story text (formatted)")
