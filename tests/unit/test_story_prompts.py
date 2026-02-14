@@ -73,11 +73,11 @@ class TestCheckInappropriateKeywords:
         assert has_violation is True
         assert "kill" in found
 
-    def test_scary_keyword(self):
-        has_violation, found = check_inappropriate_keywords("A scary zombie story")
+    def test_horror_keyword(self):
+        has_violation, found = check_inappropriate_keywords("A zombie horror story")
         assert has_violation is True
-        assert "scary" in found
         assert "zombie" in found
+        assert "horror" in found
 
     def test_profanity(self):
         has_violation, found = check_inappropriate_keywords("What the hell is that")
