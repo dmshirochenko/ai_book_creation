@@ -226,3 +226,48 @@ class StoryCreateResponse(BaseModel):
 
     job_id: str = Field(..., description="Unique job identifier for tracking")
     message: str = Field(..., description="Status message")
+
+
+class StoryValidateRequest(BaseModel):
+    """Request schema for story validation."""
+
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+        description="Story title to validate"
+    )
+    story_text: str = Field(
+        ...,
+        min_length=10,
+        max_length=10000,
+        description="Full story text to validate"
+    )
+    age_min: int = Field(2, ge=1, le=10, description="Minimum target age")
+    age_max: int = Field(4, ge=1, le=10, description="Maximum target age")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "title": "The Happy Bunny",
+                    "story_text": "A bunny hops in the garden.\nThe bunny finds a flower.\nThe bunny is happy.",
+                    "age_min": 2,
+                    "age_max": 4,
+                }
+            ]
+        }
+    }
+
+
+class StoryValidateResponse(BaseModel):
+    """Response schema for story validation."""
+
+    status: Literal["pass", "fail"] = Field(
+        ...,
+        description="Validation result: 'pass' if the story is appropriate, 'fail' if not"
+    )
+    reasoning: str = Field(
+        "",
+        description="If status is 'fail', explains why the story did not pass validation"
+    )

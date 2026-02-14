@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 from src.core.config import LLMConfig
 from src.core.llm_connector import LLMResponse
-from src.core.story_generator import StoryGenerator, StoryGenerationResult
+from src.core.story_generator import StoryGenerator, StoryGenerationResult, StoryValidationResult
 
 
 @pytest.fixture
@@ -126,3 +126,67 @@ class TestStoryGeneratorGeneration:
         with patch.object(generator.client, "_call_llm", return_value=mock_response):
             result = await generator.generate_story("A story about nothing")
             assert result.success is False
+
+
+class TestStoryValidation:
+    async def test_validate_clean_story_passes(self, generator):
+        validation_json = json.dumps({"status": "pass", "reasoning": ""})
+        mock_response = LLMResponse(content=validation_json, tokens_used=50, success=True)
+        with patch.object(generator.client, "_call_llm", return_value=mock_response):
+            result = await generator.validate_story(
+                title="The Happy Bunny",
+                story_text="A bunny hops in a sunny garden. The bunny finds a pretty flower.",
+                age_min=2,
+                age_max=4,
+            )
+            assert result.status == "pass"
+            assert result.reasoning == ""
+
+    async def test_validate_unsafe_story_fails(self, generator):
+        validation_json = json.dumps({
+            "status": "fail",
+            "reasoning": "The story contains violent content."
+        })
+        mock_response = LLMResponse(content=validation_json, tokens_used=50, success=True)
+        with patch.object(generator.client, "_call_llm", return_value=mock_response):
+            result = await generator.validate_story(
+                title="Bad Story",
+                story_text="A very violent story.",
+                age_min=2,
+                age_max=4,
+            )
+            assert result.status == "fail"
+            assert "violent" in result.reasoning
+
+    async def test_validate_copyrighted_story_fails_without_llm(self, generator):
+        # Should fail on pre-validation without calling LLM
+        result = await generator.validate_story(
+            title="Elsa's Adventure",
+            story_text="Elsa from Frozen goes on an adventure.",
+            age_min=2,
+            age_max=4,
+        )
+        assert result.status == "fail"
+        assert "copyrighted" in result.reasoning.lower()
+
+    async def test_validate_inappropriate_story_fails_without_llm(self, generator):
+        result = await generator.validate_story(
+            title="Scary Story",
+            story_text="A scary zombie appears in the dark.",
+            age_min=2,
+            age_max=4,
+        )
+        assert result.status == "fail"
+        assert "inappropriate" in result.reasoning.lower()
+
+    async def test_validate_llm_failure_returns_fail(self, generator):
+        mock_response = LLMResponse(content="", tokens_used=0, success=False, error="API timeout")
+        with patch.object(generator.client, "_call_llm", return_value=mock_response):
+            result = await generator.validate_story(
+                title="A Story",
+                story_text="Some story text here.",
+                age_min=2,
+                age_max=4,
+            )
+            assert result.status == "fail"
+            assert "try again" in result.reasoning.lower()
