@@ -18,11 +18,14 @@ from src.api.schemas import (
     StoryJobStatus,
     StoryValidateRequest,
     StoryValidateResponse,
+    StoryResplitRequest,
+    StoryResplitResponse,
+    StoryResplitPageItem,
     ErrorResponse,
 )
 from src.api.deps import get_db, get_current_user_id
 from src.core.config import LLMConfig
-from src.core.story_generator import StoryGenerator, StoryValidationResult
+from src.core.story_generator import StoryGenerator, StoryValidationResult, StoryResplitResult
 from src.db.engine import get_session_factory
 from src.db import repository as repo
 
@@ -295,6 +298,82 @@ async def validate_story(
         raise HTTPException(
             status_code=500,
             detail="Story validation failed. Please try again.",
+        )
+
+
+@router.post(
+    "/resplit",
+    response_model=StoryResplitResponse,
+    responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+async def resplit_story(
+    request: StoryResplitRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> StoryResplitResponse:
+    """
+    Re-split an edited story into narrative-aware pages using an LLM.
+
+    This is a synchronous endpoint that takes story text and returns
+    a structured page breakdown. It does NOT rewrite the story -- it
+    only decides where page breaks should go.
+
+    ## Usage:
+    Call this endpoint after story validation passes (for edited stories),
+    before proceeding to book generation. Pass the resulting structured
+    pages in the book generation request's `story_structured` field.
+
+    ## Response:
+    Returns `{"title": "...", "pages": [{"text": "..."}]}` --
+    the same format expected by the book generation endpoint's
+    `story_structured` field.
+    """
+    if request.age_min > request.age_max:
+        raise HTTPException(
+            status_code=400,
+            detail="age_min must be less than or equal to age_max",
+        )
+
+    try:
+        llm_config = LLMConfig()
+        if not llm_config.validate():
+            raise HTTPException(
+                status_code=500,
+                detail="OpenRouter API key not configured",
+            )
+
+        # Use moderate max_tokens (page array can be larger than validation)
+        llm_config.max_tokens = 2000
+        llm_config.temperature = 0.3  # Deterministic splitting
+
+        generator = StoryGenerator(llm_config)
+        result = await generator.resplit_story(
+            title=request.title,
+            story_text=request.story_text,
+            age_min=request.age_min,
+            age_max=request.age_max,
+        )
+
+        if not result.success:
+            raise HTTPException(
+                status_code=500,
+                detail=result.error or "Failed to split story into pages.",
+            )
+
+        return StoryResplitResponse(
+            title=result.story_structured["title"],
+            pages=[
+                StoryResplitPageItem(text=p["text"])
+                for p in result.story_structured["pages"]
+            ],
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Story re-split error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Story page splitting failed. Please try again.",
         )
 
 

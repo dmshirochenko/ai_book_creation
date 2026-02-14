@@ -271,3 +271,54 @@ class StoryValidateResponse(BaseModel):
         "",
         description="If status is 'fail', explains why the story did not pass validation"
     )
+
+
+# =============================================================================
+# STORY RE-SPLIT SCHEMAS
+# =============================================================================
+
+class StoryResplitRequest(BaseModel):
+    """Request schema for story re-splitting."""
+
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+        description="Story title"
+    )
+    story_text: str = Field(
+        ...,
+        min_length=10,
+        max_length=10000,
+        description="Full story text to split into pages"
+    )
+    age_min: int = Field(2, ge=1, le=10, description="Minimum target age")
+    age_max: int = Field(4, ge=1, le=10, description="Maximum target age")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "title": "The Happy Bunny",
+                    "story_text": "A bunny hops in the garden. The bunny finds a flower. The bunny smells the flower. It smells wonderful! The bunny picks the flower. The bunny brings it home. Mama bunny loves the flower. They put it in a vase. What a lovely day!",
+                    "age_min": 2,
+                    "age_max": 4,
+                }
+            ]
+        }
+    }
+
+
+class StoryResplitPageItem(BaseModel):
+    """A single page in the re-split response."""
+    text: str = Field(..., description="Text content for this page")
+
+
+class StoryResplitResponse(BaseModel):
+    """Response schema for story re-splitting."""
+
+    title: str = Field(..., description="Story title (echoed back)")
+    pages: List[StoryResplitPageItem] = Field(
+        ...,
+        description="Story text split into pages with narrative-aware breaks"
+    )
