@@ -14,6 +14,10 @@ from src.core.story_prompts import (
     get_story_validation_response_format,
     parse_story_validation_response,
     STORY_VALIDATION_JSON_SCHEMA,
+    build_story_resplit_prompt,
+    get_story_resplit_response_format,
+    parse_story_resplit_response,
+    STORY_RESPLIT_JSON_SCHEMA,
 )
 
 
@@ -319,3 +323,125 @@ class TestStoryValidation:
     def test_validation_schema_is_strict(self):
         assert STORY_VALIDATION_JSON_SCHEMA["strict"] is True
         assert STORY_VALIDATION_JSON_SCHEMA["schema"]["additionalProperties"] is False
+
+
+# =============================================================================
+# Story Re-Split
+# =============================================================================
+
+
+class TestStoryResplit:
+    def test_build_resplit_prompt_contains_story(self):
+        prompt = build_story_resplit_prompt(
+            title="The Happy Bunny",
+            story_text="A bunny hops in the garden. The bunny finds a flower.",
+            age_min=2,
+            age_max=4,
+        )
+        assert "The Happy Bunny" in prompt
+        assert "A bunny hops in the garden." in prompt
+        assert "2-4" in prompt
+        assert "SPLITTING" in prompt  # Verify it's a split-only prompt
+
+    def test_build_resplit_prompt_includes_age_range(self):
+        prompt = build_story_resplit_prompt(
+            title="Test",
+            story_text="Some story text here.",
+            age_min=3,
+            age_max=6,
+        )
+        assert "3-6" in prompt
+
+    def test_resplit_response_format_structure(self):
+        fmt = get_story_resplit_response_format()
+        assert fmt["type"] == "json_schema"
+        assert "json_schema" in fmt
+        schema = fmt["json_schema"]["schema"]
+        assert "title" in schema["properties"]
+        assert "pages" in schema["properties"]
+
+    def test_parse_resplit_valid_response(self):
+        response = json.dumps({
+            "title": "The Happy Bunny",
+            "pages": [
+                {"text": "A bunny hops in the garden."},
+                {"text": "The bunny finds a flower."},
+            ]
+        })
+        result = parse_story_resplit_response(response)
+        assert result["title"] == "The Happy Bunny"
+        assert len(result["pages"]) == 2
+        assert result["pages"][0]["text"] == "A bunny hops in the garden."
+
+    def test_parse_resplit_empty_pages(self):
+        response = json.dumps({"title": "Test", "pages": []})
+        result = parse_story_resplit_response(response)
+        assert result["pages"] == []
+        assert result["title"] == ""  # empty result on no pages
+
+    def test_parse_resplit_invalid_json(self):
+        result = parse_story_resplit_response("not json at all")
+        assert result["title"] == ""
+        assert result["pages"] == []
+
+    def test_parse_resplit_skips_empty_page_text(self):
+        response = json.dumps({
+            "title": "Test",
+            "pages": [
+                {"text": "Page one."},
+                {"text": ""},
+                {"text": "Page three."},
+            ]
+        })
+        result = parse_story_resplit_response(response)
+        assert len(result["pages"]) == 2  # Empty page skipped
+
+    def test_parse_resplit_json_in_markdown(self):
+        response = '```json\n{"title": "Test", "pages": [{"text": "Page one."}]}\n```'
+        result = parse_story_resplit_response(response)
+        assert len(result["pages"]) == 1
+
+    def test_resplit_schema_is_strict(self):
+        assert STORY_RESPLIT_JSON_SCHEMA["strict"] is True
+        assert STORY_RESPLIT_JSON_SCHEMA["schema"]["additionalProperties"] is False
+
+    def test_parse_resplit_not_a_dict(self):
+        result = parse_story_resplit_response(json.dumps([1, 2, 3]))
+        assert result["title"] == ""
+        assert result["pages"] == []
+
+    def test_parse_resplit_pages_not_a_list(self):
+        result = parse_story_resplit_response(json.dumps({"title": "T", "pages": "bad"}))
+        assert result["title"] == ""
+        assert result["pages"] == []
+
+    def test_parse_resplit_invalid_page_entries_skipped(self):
+        data = {
+            "title": "T",
+            "pages": [
+                {"text": "Valid page."},
+                {"bad": "entry"},
+                "not a dict",
+            ],
+        }
+        result = parse_story_resplit_response(json.dumps(data))
+        assert len(result["pages"]) == 1
+        assert result["pages"][0]["text"] == "Valid page."
+
+    def test_parse_resplit_strips_whitespace(self):
+        response = json.dumps({
+            "title": "  Test Title  ",
+            "pages": [
+                {"text": "  Page one.  "},
+                {"text": "  Page two.  "},
+            ]
+        })
+        result = parse_story_resplit_response(response)
+        assert result["pages"][0]["text"] == "Page one."
+        assert result["pages"][1]["text"] == "Page two."
+
+    def test_resplit_schema_no_safety_fields(self):
+        """Re-split schema should NOT include safety_status/safety_reasoning."""
+        schema_props = STORY_RESPLIT_JSON_SCHEMA["schema"]["properties"]
+        assert "safety_status" not in schema_props
+        assert "safety_reasoning" not in schema_props

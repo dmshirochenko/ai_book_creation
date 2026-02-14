@@ -639,6 +639,184 @@ LENGTH_TO_PAGES = {
 }
 
 
+# =============================================================================
+# STORY RE-SPLIT PROMPT TEMPLATE
+# =============================================================================
+
+STORY_RESPLIT_PROMPT_TEMPLATE = """You are a children's book page layout expert. Your job is to split a story into pages for a children's book aimed at ages {age_min}-{age_max}.
+
+CRITICAL RULES:
+- You are SPLITTING text into pages, NOT writing or rewriting the story
+- Every word of the original story text MUST appear in the output pages, in the original order
+- Do NOT add, remove, or change any words
+- Do NOT fix grammar, spelling, or punctuation
+- Do NOT rephrase or paraphrase anything
+- The concatenation of all page texts must exactly equal the original story text
+
+PAGE SPLITTING GUIDELINES:
+- Each page should have 1-2 simple sentences (suitable for ages {age_min}-{age_max})
+- Break at natural narrative pauses:
+  * Scene changes or new settings
+  * New character actions or events
+  * Emotional shifts or reactions
+  * Dialogue boundaries
+  * Before/after a climactic moment
+- Aim for roughly even page lengths (no single-word pages, no overly long pages)
+- A typical children's book for this age has 6-16 pages of content
+
+---
+
+STORY TITLE: {title}
+
+STORY TEXT:
+{story_text}
+
+---
+
+YOUR TASK:
+Split the story text above into pages. Return the result as structured JSON with "title" (echo back the title) and "pages" (array of objects with "text" field). Every word must be preserved exactly."""
+
+
+# =============================================================================
+# STORY RE-SPLIT JSON SCHEMA (for OpenRouter Structured Outputs)
+# =============================================================================
+
+STORY_RESPLIT_JSON_SCHEMA = {
+    "name": "story_resplit",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "The story title (echoed back from input)"
+            },
+            "pages": {
+                "type": "array",
+                "description": "Ordered list of story pages with the original text split into page-sized chunks",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "text": {
+                            "type": "string",
+                            "description": "Text content for this page. 1-2 simple sentences from the original story."
+                        }
+                    },
+                    "required": ["text"],
+                    "additionalProperties": False
+                }
+            }
+        },
+        "required": ["title", "pages"],
+        "additionalProperties": False
+    }
+}
+
+
+def get_story_resplit_response_format() -> dict:
+    """
+    Get the response_format parameter for structured re-split outputs.
+
+    Returns:
+        Dict with type and json_schema for OpenRouter API
+    """
+    return {
+        "type": "json_schema",
+        "json_schema": STORY_RESPLIT_JSON_SCHEMA
+    }
+
+
+def build_story_resplit_prompt(
+    title: str,
+    story_text: str,
+    age_min: int,
+    age_max: int,
+) -> str:
+    """
+    Build the prompt for story re-splitting.
+
+    Args:
+        title: Story title
+        story_text: Full story text to split into pages
+        age_min: Minimum target age
+        age_max: Maximum target age
+
+    Returns:
+        Formatted prompt string
+    """
+    return STORY_RESPLIT_PROMPT_TEMPLATE.format(
+        title=title,
+        story_text=story_text,
+        age_min=age_min,
+        age_max=age_max,
+    )
+
+
+def parse_story_resplit_response(response_text: str) -> dict:
+    """
+    Parse the LLM re-split response.
+
+    Args:
+        response_text: Raw text response from LLM (should be valid JSON with structured outputs)
+
+    Returns:
+        Dict with "title" (str) and "pages" (list of {"text": str}),
+        or empty structure on failure.
+    """
+    empty = {"title": "", "pages": []}
+
+    try:
+        text = response_text.strip()
+
+        # Try direct JSON parse first (structured outputs)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            # Fallback: extract JSON from potential markdown wrapping
+            json_match = re.search(r'\{[\s\S]*\}', text)
+            if not json_match:
+                logger.error("Could not find JSON in re-split response")
+                return empty
+            data = json.loads(json_match.group())
+
+        # Validate structure
+        if not isinstance(data, dict):
+            logger.error("Re-split response is not a JSON object")
+            return empty
+
+        title = data.get("title", "")
+        pages = data.get("pages", [])
+
+        if not isinstance(pages, list):
+            logger.error("Re-split response 'pages' is not an array")
+            return empty
+
+        # Normalize pages
+        normalized_pages = []
+        for page in pages:
+            if isinstance(page, dict) and "text" in page:
+                page_text = str(page["text"]).strip()
+                if page_text:  # Skip empty pages
+                    normalized_pages.append({"text": page_text})
+
+        if not normalized_pages:
+            logger.error("Re-split response has no non-empty pages")
+            return empty
+
+        return {
+            "title": str(title),
+            "pages": normalized_pages,
+        }
+
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.error(f"Failed to parse re-split response: {e}")
+        return empty
+
+
+# =============================================================================
+# PROMPT BUILDING
+# =============================================================================
+
 def build_story_creation_prompt(
     user_prompt: str,
     age_min: int,

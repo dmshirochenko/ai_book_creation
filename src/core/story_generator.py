@@ -21,6 +21,9 @@ from src.core.story_prompts import (
     build_story_validation_prompt,
     get_story_validation_response_format,
     parse_story_validation_response,
+    build_story_resplit_prompt,
+    get_story_resplit_response_format,
+    parse_story_resplit_response,
 )
 
 
@@ -51,6 +54,15 @@ class StoryValidationResult:
     """Result of story validation."""
     status: str  # "pass" or "fail"
     reasoning: str = ""
+    error: Optional[str] = None
+
+
+@dataclass
+class StoryResplitResult:
+    """Result of story re-splitting."""
+    success: bool
+    story_structured: dict = field(default_factory=dict)  # {"title": str, "pages": [{"text": str}]}
+    page_count: int = 0
     error: Optional[str] = None
 
 
@@ -301,6 +313,71 @@ class StoryGenerator:
         return StoryValidationResult(
             status=parsed["status"],
             reasoning=parsed["reasoning"],
+        )
+
+    async def resplit_story(
+        self,
+        title: str,
+        story_text: str,
+        age_min: int = 2,
+        age_max: int = 4,
+    ) -> StoryResplitResult:
+        """
+        Re-split an edited story into narrative-aware pages using an LLM.
+
+        This does NOT rewrite the story -- it only decides where to break pages.
+        The output format matches what process_structured() expects.
+
+        Args:
+            title: Story title
+            story_text: Full story text to split into pages
+            age_min: Minimum target age
+            age_max: Maximum target age
+
+        Returns:
+            StoryResplitResult with structured story data or error
+        """
+        logger.info(f"Re-splitting story: title='{title[:50]}', age={age_min}-{age_max}, text_len={len(story_text)}")
+
+        # Build re-split prompt
+        prompt = build_story_resplit_prompt(
+            title=title,
+            story_text=story_text,
+            age_min=age_min,
+            age_max=age_max,
+        )
+
+        # Call LLM with structured JSON output
+        response_format = get_story_resplit_response_format()
+        response = await self.client._call_llm(
+            prompt,
+            response_format=response_format,
+            model_override=self.config.analysis_model,
+        )
+
+        if not response.success:
+            logger.error(f"LLM re-split call failed: {response.error}")
+            return StoryResplitResult(
+                success=False,
+                error=response.error or "LLM call failed",
+            )
+
+        # Parse response
+        parsed = parse_story_resplit_response(response.content)
+
+        if not parsed["pages"]:
+            logger.error("Re-split response has no pages")
+            return StoryResplitResult(
+                success=False,
+                error="Failed to split story into pages",
+            )
+
+        logger.info(f"Story re-split successfully: {len(parsed['pages'])} pages")
+
+        return StoryResplitResult(
+            success=True,
+            story_structured=parsed,
+            page_count=len(parsed["pages"]),
         )
 
 

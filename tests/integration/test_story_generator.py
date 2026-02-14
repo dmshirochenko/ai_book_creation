@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 from src.core.config import LLMConfig
 from src.core.llm_connector import LLMResponse
-from src.core.story_generator import StoryGenerator, StoryGenerationResult, StoryValidationResult
+from src.core.story_generator import StoryGenerator, StoryGenerationResult, StoryValidationResult, StoryResplitResult
 
 
 @pytest.fixture
@@ -190,3 +190,106 @@ class TestStoryValidation:
             )
             assert result.status == "fail"
             assert "try again" in result.reasoning.lower()
+
+
+class TestStoryResplit:
+    async def test_resplit_story_success(self, generator):
+        resplit_json = json.dumps({
+            "title": "The Happy Bunny",
+            "pages": [
+                {"text": "A bunny hops in the garden."},
+                {"text": "The bunny finds a flower."},
+                {"text": "The bunny brings it home."},
+            ]
+        })
+        mock_response = LLMResponse(content=resplit_json, tokens_used=100, success=True)
+        with patch.object(generator.client, "_call_llm", return_value=mock_response):
+            result = await generator.resplit_story(
+                title="The Happy Bunny",
+                story_text="A bunny hops in the garden. The bunny finds a flower. The bunny brings it home.",
+                age_min=2,
+                age_max=4,
+            )
+            assert result.success is True
+            assert result.page_count == 3
+            assert result.story_structured["title"] == "The Happy Bunny"
+            assert len(result.story_structured["pages"]) == 3
+
+    async def test_resplit_story_llm_failure(self, generator):
+        mock_response = LLMResponse(content="", tokens_used=0, success=False, error="API timeout")
+        with patch.object(generator.client, "_call_llm", return_value=mock_response):
+            result = await generator.resplit_story(
+                title="A Story",
+                story_text="Some story text here that needs splitting.",
+                age_min=2,
+                age_max=4,
+            )
+            assert result.success is False
+            assert result.error is not None
+
+    async def test_resplit_story_empty_pages(self, generator):
+        resplit_json = json.dumps({"title": "Test", "pages": []})
+        mock_response = LLMResponse(content=resplit_json, tokens_used=50, success=True)
+        with patch.object(generator.client, "_call_llm", return_value=mock_response):
+            result = await generator.resplit_story(
+                title="Test",
+                story_text="Some text that should have pages.",
+                age_min=2,
+                age_max=4,
+            )
+            assert result.success is False
+            assert "pages" in result.error.lower() or "split" in result.error.lower()
+
+    async def test_resplit_story_preserves_title(self, generator):
+        resplit_json = json.dumps({
+            "title": "My Custom Title",
+            "pages": [{"text": "Page one."}]
+        })
+        mock_response = LLMResponse(content=resplit_json, tokens_used=50, success=True)
+        with patch.object(generator.client, "_call_llm", return_value=mock_response):
+            result = await generator.resplit_story(
+                title="My Custom Title",
+                story_text="Page one.",
+                age_min=2,
+                age_max=4,
+            )
+            assert result.success is True
+            assert result.story_structured["title"] == "My Custom Title"
+
+    async def test_resplit_story_unparseable_response(self, generator):
+        mock_response = LLMResponse(content="this is not json", tokens_used=50, success=True)
+        with patch.object(generator.client, "_call_llm", return_value=mock_response):
+            result = await generator.resplit_story(
+                title="Test",
+                story_text="Some story text here.",
+                age_min=2,
+                age_max=4,
+            )
+            assert result.success is False
+
+    async def test_resplit_result_compatible_with_process_structured(self, generator):
+        """Verify the output structure matches what TextProcessor.process_structured() expects."""
+        resplit_json = json.dumps({
+            "title": "The Happy Bunny",
+            "pages": [
+                {"text": "A bunny hops in the garden."},
+                {"text": "The bunny finds a flower."},
+            ]
+        })
+        mock_response = LLMResponse(content=resplit_json, tokens_used=100, success=True)
+        with patch.object(generator.client, "_call_llm", return_value=mock_response):
+            result = await generator.resplit_story(
+                title="The Happy Bunny",
+                story_text="A bunny hops in the garden. The bunny finds a flower.",
+                age_min=2,
+                age_max=4,
+            )
+            assert result.success is True
+            structured = result.story_structured
+            # Verify it has the expected keys for process_structured()
+            assert "title" in structured
+            assert "pages" in structured
+            assert isinstance(structured["pages"], list)
+            for page in structured["pages"]:
+                assert "text" in page
+                assert isinstance(page["text"], str)
