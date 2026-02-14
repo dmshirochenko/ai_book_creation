@@ -151,30 +151,26 @@ COPYRIGHTED_CHARACTERS = [
 # =============================================================================
 
 INAPPROPRIATE_KEYWORDS = [
-    # Violence
+    # Graphic violence
     "kill", "murder", "blood", "gore", "stab", "shoot", "gun",
-    "weapon", "knife", "sword", "bomb", "explosion", "war",
-    "fight", "punch", "kick", "hit", "hurt", "wound", "injury",
-    "dead", "death", "die", "dying",
+    "bomb", "explosion",
 
-    # Scary/Horror
-    "scary", "horror", "terrifying", "frightening", "nightmare",
-    "demon", "devil", "ghost", "zombie", "vampire",
-    "creepy", "spooky",
+    # Horror (genuinely inappropriate for young children)
+    "horror", "terrifying", "nightmare",
+    "demon", "devil", "zombie", "vampire",
 
-    # Inappropriate Content
+    # Inappropriate content
     "sex", "sexual", "porn", "nude", "naked",
     "drug", "cocaine", "marijuana", "heroin",
     "alcohol", "beer", "wine", "drunk",
     "cigarette", "smoking", "tobacco",
 
-    # Profanity (basic list)
+    # Profanity
     "damn", "hell", "crap", "shit", "fuck",
     "ass", "bastard", "bitch",
 
-    # Negative Themes
+    # Harmful themes
     "suicide", "abuse", "kidnap", "torture",
-    "evil", "wicked", "vicious",
 ]
 
 
@@ -184,42 +180,36 @@ INAPPROPRIATE_KEYWORDS = [
 
 STORY_CREATION_PROMPT_TEMPLATE = """You are a children's book author specializing in stories for ages {age_min}-{age_max}.
 
-CRITICAL SAFETY REQUIREMENTS:
-You MUST follow these rules strictly. Violations will result in the story being rejected.
+SAFETY GUIDELINES:
+Keep content age-appropriate for {age_min}-{age_max} year olds.
 
-1. **Age Appropriateness**: Content must be suitable for {age_min}-{age_max} year olds
-   - No violence, fighting, or physical harm
-   - No scary creatures, monsters, or frightening situations
-   - No references to death, injury, or danger
-   - No weapons of any kind
+1. **Age-Appropriate Content**:
+   - Mild conflict and challenges are fine (getting lost, making a mistake, facing a fear)
+   - Friendly creatures, silly monsters, and gentle dragons are welcome
+   - Characters can feel scared, sad, frustrated, or make mistakes — that's part of good storytelling
+   - Avoid graphic violence, real weapons, or genuinely frightening scenarios
+   - No references to drugs, alcohol, adult themes, or profanity
 
-2. **Positive Values Only**:
-   - Stories should teach kindness, friendship, sharing, and cooperation
-   - Characters should solve problems through communication and creativity
-   - No bullying, teasing, or meanness between characters
-   - Conflicts should be gentle and easily resolved
+2. **Positive Storytelling**:
+   - Stories can include characters who make mistakes and learn from them
+   - Mild tension and stakes make stories engaging
+   - Conflicts should resolve in age-appropriate ways
+   - Characters can be mean or selfish IF the story shows why that behavior is wrong
 
-3. **No Inappropriate Content**:
-   - No references to drugs, alcohol, or smoking
-   - No adult themes or relationships
-   - No bathroom humor beyond what's developmentally appropriate
-   - No profanity or rude language
-
-4. **Copyright Compliance**:
+3. **Copyright Compliance**:
    - DO NOT use any copyrighted characters (Disney, Marvel, Pixar, etc.)
    - Create ORIGINAL characters with unique names
-   - Avoid any recognizable franchise elements or settings
-   - If the user's prompt mentions copyrighted characters, CREATE NEW ORIGINAL CHARACTERS INSTEAD
+   - If the user's prompt mentions copyrighted characters, CREATE NEW ORIGINAL CHARACTERS with a similar spirit
 
-5. **Safety Status**:
-   - You MUST set "safety_status" to "safe" if the story is appropriate for the target age group
-   - You MUST set "safety_status" to "unsafe" if the user's prompt asks for:
-     * Violent, scary, or harmful content
-     * Content involving copyrighted characters (Disney, Marvel, etc.)
-     * Adult themes, profanity, or age-inappropriate material
-     * Any content you would not feel comfortable showing to a young child
+4. **Safety Status**:
+   - Set "safety_status" to "safe" for any age-appropriate story request
+   - Set "safety_status" to "unsafe" ONLY if the prompt explicitly asks for:
+     * Graphic violence, gore, or truly harmful content
+     * Adult/sexual themes or profanity
+     * Content that would genuinely distress a young child
+   - Copyrighted character requests are NOT "unsafe" — create original alternatives instead
    - If "safety_status" is "unsafe":
-     * Set "safety_reasoning" to a short, parent-friendly explanation (1-2 sentences) of why the story cannot be created
+     * Set "safety_reasoning" to a short, parent-friendly explanation (1-2 sentences)
      * Set "title" to an empty string
      * Set "pages" to an empty array
    - If "safety_status" is "safe":
@@ -471,18 +461,16 @@ You are NOT writing or rewriting the story. You are ONLY checking if the provide
 EVALUATION CRITERIA:
 
 1. **Safety**: The story must NOT contain:
-   - Violence, fighting, or physical harm
-   - Scary creatures, monsters, or frightening situations
-   - References to death, injury, or danger
-   - Weapons of any kind
+   - Graphic violence, gore, or realistic harm
+   - Genuinely frightening or disturbing content (nightmares, demons, etc.)
    - References to drugs, alcohol, or smoking
-   - Adult themes or relationships
-   - Profanity or rude language
+   - Adult/sexual themes or profanity
+   - Note: Mild conflict, friendly creatures, characters feeling scared or sad, and characters making mistakes are all FINE
 
-2. **Age Appropriateness**: The story must be suitable for {age_min}-{age_max} year olds:
-   - Vocabulary should be simple and understandable
-   - Themes should be gentle and positive
-   - Content should promote kindness, friendship, sharing, or cooperation
+2. **Age Appropriateness**: The story should be broadly suitable for {age_min}-{age_max} year olds:
+   - Vocabulary should be mostly understandable for the age group
+   - Themes can include challenges, feelings, and learning moments
+   - Stories do NOT need to explicitly promote specific values — a simple adventure is fine
 
 3. **Copyright Compliance**: The story must NOT contain:
    - Copyrighted characters (Disney, Marvel, Pixar, DC, Pokemon, etc.)
@@ -494,12 +482,12 @@ EVALUATION CRITERIA:
    - Meaningful content (not a single repeated phrase)
 
 RULES:
-- Set "status" to "pass" if the story meets ALL criteria above
-- Set "status" to "fail" if the story violates ANY criterion
+- Set "status" to "pass" if the story is age-appropriate and safe
+- Set "status" to "fail" ONLY if the story contains genuinely inappropriate content
 - If "fail", set "reasoning" to a short, parent-friendly explanation (1-2 sentences) of what is wrong
 - If "pass", set "reasoning" to an empty string
-- Be lenient on story quality -- minor grammatical issues or simple stories are fine
-- Focus primarily on safety and appropriateness
+- Be lenient — mild conflict, silly humor, characters feeling scared or sad, and imperfect grammar are all fine
+- Focus on catching truly harmful content, not on enforcing a specific storytelling style
 
 ---
 
