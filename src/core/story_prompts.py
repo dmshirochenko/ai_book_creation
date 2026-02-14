@@ -461,6 +461,173 @@ def is_refusal_response(story: str) -> bool:
 
 
 # =============================================================================
+# STORY VALIDATION PROMPT TEMPLATE
+# =============================================================================
+
+STORY_VALIDATION_PROMPT_TEMPLATE = """You are a children's book content reviewer. Your job is to evaluate whether a story is appropriate for children aged {age_min}-{age_max}.
+
+You are NOT writing or rewriting the story. You are ONLY checking if the provided story text is acceptable.
+
+EVALUATION CRITERIA:
+
+1. **Safety**: The story must NOT contain:
+   - Violence, fighting, or physical harm
+   - Scary creatures, monsters, or frightening situations
+   - References to death, injury, or danger
+   - Weapons of any kind
+   - References to drugs, alcohol, or smoking
+   - Adult themes or relationships
+   - Profanity or rude language
+
+2. **Age Appropriateness**: The story must be suitable for {age_min}-{age_max} year olds:
+   - Vocabulary should be simple and understandable
+   - Themes should be gentle and positive
+   - Content should promote kindness, friendship, sharing, or cooperation
+
+3. **Copyright Compliance**: The story must NOT contain:
+   - Copyrighted characters (Disney, Marvel, Pixar, DC, Pokemon, etc.)
+   - Recognizable franchise elements, settings, or catchphrases
+
+4. **Content Quality**: The story must have:
+   - Coherent narrative (not random words or gibberish)
+   - At least a basic story structure
+   - Meaningful content (not a single repeated phrase)
+
+RULES:
+- Set "status" to "pass" if the story meets ALL criteria above
+- Set "status" to "fail" if the story violates ANY criterion
+- If "fail", set "reasoning" to a short, parent-friendly explanation (1-2 sentences) of what is wrong
+- If "pass", set "reasoning" to an empty string
+- Be lenient on story quality -- minor grammatical issues or simple stories are fine
+- Focus primarily on safety and appropriateness
+
+---
+
+STORY TITLE: {title}
+
+STORY TEXT:
+{story_text}
+
+---
+
+YOUR TASK:
+Evaluate the story above. Return your verdict as structured JSON with "status" (pass/fail) and "reasoning"."""
+
+
+# =============================================================================
+# STORY VALIDATION JSON SCHEMA (for OpenRouter Structured Outputs)
+# =============================================================================
+
+STORY_VALIDATION_JSON_SCHEMA = {
+    "name": "story_validation",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "status": {
+                "type": "string",
+                "enum": ["pass", "fail"],
+                "description": "Whether the story passes validation. 'pass' if appropriate, 'fail' if not."
+            },
+            "reasoning": {
+                "type": "string",
+                "description": "If status is 'fail', a short parent-friendly explanation. If 'pass', empty string."
+            }
+        },
+        "required": ["status", "reasoning"],
+        "additionalProperties": False
+    }
+}
+
+
+def get_story_validation_response_format() -> dict:
+    """
+    Get the response_format parameter for structured validation outputs.
+
+    Returns:
+        Dict with type and json_schema for OpenRouter API
+    """
+    return {
+        "type": "json_schema",
+        "json_schema": STORY_VALIDATION_JSON_SCHEMA
+    }
+
+
+def build_story_validation_prompt(
+    title: str,
+    story_text: str,
+    age_min: int,
+    age_max: int,
+) -> str:
+    """
+    Build the prompt for story validation.
+
+    Args:
+        title: Story title
+        story_text: Full story text
+        age_min: Minimum target age
+        age_max: Maximum target age
+
+    Returns:
+        Formatted prompt string
+    """
+    return STORY_VALIDATION_PROMPT_TEMPLATE.format(
+        title=title,
+        story_text=story_text,
+        age_min=age_min,
+        age_max=age_max,
+    )
+
+
+def parse_story_validation_response(response_text: str) -> dict:
+    """
+    Parse the LLM validation response.
+
+    Args:
+        response_text: Raw text response from LLM (should be valid JSON with structured outputs)
+
+    Returns:
+        Dict with "status" ("pass"/"fail") and "reasoning" (string)
+    """
+    empty = {"status": "fail", "reasoning": "Unable to validate story content."}
+
+    try:
+        text = response_text.strip()
+
+        # Try direct JSON parse first (structured outputs)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            # Fallback: extract JSON from potential markdown wrapping
+            json_match = re.search(r'\{[\s\S]*\}', text)
+            if not json_match:
+                logger.error("Could not find JSON in validation response")
+                return empty
+            data = json.loads(json_match.group())
+
+        # Validate structure
+        if not isinstance(data, dict):
+            logger.error("Validation response is not a JSON object")
+            return empty
+
+        status = data.get("status", "fail")
+        reasoning = data.get("reasoning", "")
+
+        if status not in ("pass", "fail"):
+            logger.error(f"Invalid validation status: {status}")
+            return empty
+
+        return {
+            "status": str(status),
+            "reasoning": str(reasoning),
+        }
+
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.error(f"Failed to parse validation response: {e}")
+        return empty
+
+
+# =============================================================================
 # PROMPT BUILDING
 # =============================================================================
 

@@ -18,6 +18,9 @@ from src.core.story_prompts import (
     is_refusal_response,
     get_story_creation_response_format,
     parse_story_output_response,
+    build_story_validation_prompt,
+    get_story_validation_response_format,
+    parse_story_validation_response,
 )
 
 
@@ -41,6 +44,14 @@ class StoryGenerationResult:
     safety_violations: List[str] = field(default_factory=list)
     safety_status: str = "safe"
     safety_reasoning: str = ""
+
+
+@dataclass
+class StoryValidationResult:
+    """Result of story validation."""
+    status: str  # "pass" or "fail"
+    reasoning: str = ""
+    error: Optional[str] = None
 
 
 # =============================================================================
@@ -217,6 +228,79 @@ class StoryGenerator:
             page_count=len(story_lines),
             tokens_used=response.tokens_used,
             safety_status="safe",
+        )
+
+    async def validate_story(
+        self,
+        title: str,
+        story_text: str,
+        age_min: int = 2,
+        age_max: int = 4,
+    ) -> StoryValidationResult:
+        """
+        Validate an edited story for safety, age-appropriateness, and coherence.
+
+        This is a synchronous check (not a background task). It calls the LLM
+        with a validation-only prompt and returns pass/fail with reasoning.
+
+        Args:
+            title: Story title
+            story_text: Full story text
+            age_min: Minimum target age
+            age_max: Maximum target age
+
+        Returns:
+            StoryValidationResult with pass/fail status and reasoning
+        """
+        logger.info(f"Validating story: title='{title[:50]}', age={age_min}-{age_max}")
+
+        # Pre-validation: check the story text (title + text) for obvious issues
+        combined_text = f"{title} {story_text}"
+        has_copyright, characters = check_copyrighted_content(combined_text)
+        if has_copyright:
+            return StoryValidationResult(
+                status="fail",
+                reasoning=f"The story contains copyrighted characters: {', '.join(characters)}. Please remove or replace them with original characters.",
+            )
+
+        has_inappropriate, keywords = check_inappropriate_keywords(combined_text)
+        if has_inappropriate:
+            return StoryValidationResult(
+                status="fail",
+                reasoning=f"The story contains inappropriate content ({', '.join(keywords)}). Please revise the story to be suitable for children.",
+            )
+
+        # Build validation prompt
+        prompt = build_story_validation_prompt(
+            title=title,
+            story_text=story_text,
+            age_min=age_min,
+            age_max=age_max,
+        )
+
+        # Call LLM with structured JSON output
+        response_format = get_story_validation_response_format()
+        response = await self.client._call_llm(
+            prompt,
+            response_format=response_format,
+            model_override=self.config.analysis_model,
+        )
+
+        if not response.success:
+            logger.error(f"LLM validation call failed: {response.error}")
+            return StoryValidationResult(
+                status="fail",
+                reasoning="Unable to validate story at this time. Please try again.",
+                error=response.error,
+            )
+
+        # Parse response
+        parsed = parse_story_validation_response(response.content)
+        logger.info(f"Story validation result: status={parsed['status']}, reasoning='{parsed['reasoning'][:80]}'")
+
+        return StoryValidationResult(
+            status=parsed["status"],
+            reasoning=parsed["reasoning"],
         )
 
 

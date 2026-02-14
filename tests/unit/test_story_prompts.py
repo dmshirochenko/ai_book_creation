@@ -10,6 +10,10 @@ from src.core.story_prompts import (
     get_story_creation_response_format,
     parse_story_output_response,
     LENGTH_TO_PAGES,
+    build_story_validation_prompt,
+    get_story_validation_response_format,
+    parse_story_validation_response,
+    STORY_VALIDATION_JSON_SCHEMA,
 )
 
 
@@ -250,3 +254,68 @@ class TestLengthToPages:
         assert LENGTH_TO_PAGES["short"] == (6, 8)
         assert LENGTH_TO_PAGES["medium"] == (10, 12)
         assert LENGTH_TO_PAGES["long"] == (14, 16)
+
+
+# =============================================================================
+# Story Validation
+# =============================================================================
+
+
+class TestStoryValidation:
+    def test_build_validation_prompt_contains_story(self):
+        prompt = build_story_validation_prompt(
+            title="The Happy Bunny",
+            story_text="A bunny hops in the garden.",
+            age_min=2,
+            age_max=4,
+        )
+        assert "The Happy Bunny" in prompt
+        assert "A bunny hops in the garden." in prompt
+        assert "2-4" in prompt
+
+    def test_validation_response_format_structure(self):
+        fmt = get_story_validation_response_format()
+        assert fmt["type"] == "json_schema"
+        assert "json_schema" in fmt
+        schema = fmt["json_schema"]["schema"]
+        assert "status" in schema["properties"]
+        assert "reasoning" in schema["properties"]
+
+    def test_parse_validation_pass(self):
+        response = json.dumps({"status": "pass", "reasoning": ""})
+        result = parse_story_validation_response(response)
+        assert result["status"] == "pass"
+        assert result["reasoning"] == ""
+
+    def test_parse_validation_fail(self):
+        response = json.dumps({
+            "status": "fail",
+            "reasoning": "The story contains violent content."
+        })
+        result = parse_story_validation_response(response)
+        assert result["status"] == "fail"
+        assert "violent" in result["reasoning"]
+
+    def test_parse_validation_invalid_json(self):
+        result = parse_story_validation_response("not json at all")
+        assert result["status"] == "fail"
+        assert result["reasoning"] != ""
+
+    def test_parse_validation_missing_fields(self):
+        response = json.dumps({"other": "data"})
+        result = parse_story_validation_response(response)
+        assert result["status"] == "fail"
+
+    def test_parse_validation_invalid_status_value(self):
+        response = json.dumps({"status": "maybe", "reasoning": ""})
+        result = parse_story_validation_response(response)
+        assert result["status"] == "fail"
+
+    def test_parse_validation_json_in_markdown(self):
+        response = '```json\n{"status": "pass", "reasoning": ""}\n```'
+        result = parse_story_validation_response(response)
+        assert result["status"] == "pass"
+
+    def test_validation_schema_is_strict(self):
+        assert STORY_VALIDATION_JSON_SCHEMA["strict"] is True
+        assert STORY_VALIDATION_JSON_SCHEMA["schema"]["additionalProperties"] is False

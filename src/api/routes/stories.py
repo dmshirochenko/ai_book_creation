@@ -16,11 +16,13 @@ from src.api.schemas import (
     StoryCreateRequest,
     StoryCreateResponse,
     StoryJobStatus,
+    StoryValidateRequest,
+    StoryValidateResponse,
     ErrorResponse,
 )
 from src.api.deps import get_db, get_current_user_id
 from src.core.config import LLMConfig
-from src.core.story_generator import StoryGenerator
+from src.core.story_generator import StoryGenerator, StoryValidationResult
 from src.db.engine import get_session_factory
 from src.db import repository as repo
 
@@ -229,6 +231,71 @@ async def create_story(
         job_id=str(job_id),
         message="Story creation started. Use /stories/{job_id}/status to track progress.",
     )
+
+
+@router.post(
+    "/validate",
+    response_model=StoryValidateResponse,
+    responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+async def validate_story(
+    request: StoryValidateRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> StoryValidateResponse:
+    """
+    Validate an edited story for safety and appropriateness.
+
+    This is a synchronous endpoint that checks the story text using an LLM.
+    It does NOT rewrite the story -- it only evaluates whether the content
+    is safe, age-appropriate, and coherent.
+
+    ## Usage:
+    Call this endpoint when the user edits a story on the preview step,
+    before proceeding to book configuration.
+
+    ## Response:
+    - `status: "pass"` -- story is appropriate, proceed to next step
+    - `status: "fail"` -- story has issues, show `reasoning` to the user
+    """
+    if request.age_min > request.age_max:
+        raise HTTPException(
+            status_code=400,
+            detail="age_min must be less than or equal to age_max",
+        )
+
+    try:
+        llm_config = LLMConfig()
+        if not llm_config.validate():
+            raise HTTPException(
+                status_code=500,
+                detail="OpenRouter API key not configured",
+            )
+
+        # Use lower max_tokens for validation (response is short)
+        llm_config.max_tokens = 500
+        llm_config.temperature = 0.3  # More deterministic for validation
+
+        generator = StoryGenerator(llm_config)
+        result = await generator.validate_story(
+            title=request.title,
+            story_text=request.story_text,
+            age_min=request.age_min,
+            age_max=request.age_max,
+        )
+
+        return StoryValidateResponse(
+            status=result.status,
+            reasoning=result.reasoning,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Story validation error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Story validation failed. Please try again.",
+        )
 
 
 @router.get(
