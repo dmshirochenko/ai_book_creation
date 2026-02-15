@@ -40,7 +40,7 @@ POST /stories/create → Structured JSON generation (Gemini Flash) → Book PDF
 4. **PDF Generation** (`pdf_generator.generate_both_pdfs`) - Produces both `_booklet.pdf` (imposition-ordered for duplex printing) and `_review.pdf` (sequential for screen)
 
 **Key data flow:**
-- `BookGenerateRequest` (Pydantic) → `_generate_book_task` background task → passed directly to `pdf_generator` and `image_generator`
+- `BookGenerateRequest` (Pydantic) → `generate_book_task` background task (`src/tasks/book_tasks.py`) → passed directly to `pdf_generator` and `image_generator`
 - Text processing: `TextProcessor.process_raw_story()` or `TextProcessor.process_structured()` → `BookContent` with `BookPage` objects
 - Story generation returns structured JSON stored as JSONB in `story_jobs.generated_story_json`
 
@@ -56,7 +56,10 @@ POST /stories/create → Structured JSON generation (Gemini Flash) → Book PDF
 | `src/core/pdf_generator.py` | `PDFBookletGenerator`, `FontManager`, page imposition logic |
 | `src/core/image_generator.py` | `BookImageGenerator` with file-based caching in `image_cache/` |
 | `src/api/schemas.py` | Pydantic models: `BookGenerateRequest`, `JobStatus` |
-| `src/api/routes/books.py` | All book generation endpoints and background task logic |
+| `src/api/routes/books.py` | Book generation endpoints (thin handlers — validate, dispatch, respond) |
+| `src/api/routes/stories.py` | Story creation endpoints (thin handlers) |
+| `src/tasks/book_tasks.py` | Background tasks: `generate_book_task`, `regenerate_book_task` |
+| `src/tasks/story_tasks.py` | Background task: `create_story_task` |
 
 ## Database
 
@@ -67,13 +70,14 @@ POST /stories/create → Structured JSON generation (Gemini Flash) → Book PDF
 ## Testing
 
 - Run the full test suite after any code changes: `python -m pytest tests/ -v`
-- The project has 225+ tests — verify all pass before committing.
+- The project has 260+ tests — verify all pass before committing.
 - After refactors or removals, run tests immediately to catch circular imports and broken references.
 
 ## Conventions
 
 - **Single API provider**: OpenRouter handles story generation (Gemini Flash), analysis (Gemini), and image generation. One `OPENROUTER_API_KEY` covers everything.
-- **Import style**: Use `from src.core.X import Y` for core modules, `from src.api.X import Y` for API modules
+- **Import style**: Use `from src.core.X import Y` for core modules, `from src.api.X import Y` for API modules, `from src.tasks.X import Y` for background tasks
+- **Thin controllers**: Route handlers only validate input, dispatch background tasks, and return responses. Business/orchestration logic lives in `src/tasks/`
 - **Structured outputs**: Story generation uses JSON Schema structured outputs for reliable parsing
 - **Error tolerance**: LLM/image failures log warnings but don't halt generation
 - **Visual consistency**: `StoryVisualContext` extracted before image generation is injected into all image prompts
