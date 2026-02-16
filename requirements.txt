@@ -27,3 +27,6 @@ alembic>=1.13.0
 
 # Cloud storage (Cloudflare R2, S3-compatible)
 aioboto3>=13.0.0
+
+# CloudWatch logging (optional, enable via CLOUDWATCH_ENABLED=true)
+watchtower>=3.0.0

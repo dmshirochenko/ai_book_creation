@@ -153,9 +153,6 @@ class OpenRouterImageGenerator:
 
     async def generate(self, prompt: str) -> GeneratedImage:
         """Generate an image from prompt using chat completions with image modality."""
-        logger.debug(f"Generating image with model: {self.config.model}")
-        logger.debug(f"Prompt length: {len(prompt)} chars")
-
         payload = {
             "model": self.config.model,
             "messages": [
@@ -173,7 +170,6 @@ class OpenRouterImageGenerator:
 
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
-                logger.debug(f"Sending request to {self.config.base_url}")
                 response = await client.post(
                     self.config.base_url,
                     headers=self.headers,
@@ -182,13 +178,11 @@ class OpenRouterImageGenerator:
                 response.raise_for_status()
 
                 data = response.json()
-                logger.debug(f"Response keys: {data.keys()}")
 
                 # Extract image from the response
                 if data.get("choices"):
                     message = data["choices"][0].get("message", {})
                     images = message.get("images", [])
-                    logger.debug(f"Found {len(images)} images in response")
 
                     if images:
                         # Get the first image's base64 data URL
@@ -198,7 +192,6 @@ class OpenRouterImageGenerator:
                             # Parse data URL: "data:image/png;base64,ENCODED_DATA"
                             header, encoded = image_url.split(",", 1)
                             image_bytes = base64.b64decode(encoded)
-                            logger.debug(f"Successfully decoded image: {len(image_bytes)} bytes")
 
                             return GeneratedImage(
                                 success=True,
@@ -361,7 +354,6 @@ class BookImageGenerator:
         total = len(pages)
 
         logger.info(f"Starting parallel image generation for {total} pages")
-        logger.debug(f"Pages to process: {[(p.get('page_number'), p.get('page_type')) for p in pages]}")
 
         # Filter out blank pages and build task list
         tasks_to_run = []

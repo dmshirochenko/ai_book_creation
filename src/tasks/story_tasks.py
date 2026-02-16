@@ -25,8 +25,7 @@ async def create_story_task(
     Background task to create a story.
     Uses its own DB session (background tasks run outside FastAPI dependency injection).
     """
-    logger.info(f"[{job_id}] Starting story creation task")
-    logger.info(f"[{job_id}] Prompt: '{request.prompt[:50]}...', tone: {request.tone}, length: {request.length}")
+    logger.info(f"[{job_id}] Starting story creation task: tone={request.tone}, length={request.length}")
 
     session_factory = get_session_factory()
     if session_factory is None:
@@ -40,7 +39,6 @@ async def create_story_task(
                 status="processing",
                 progress="Validating prompt and preparing generation...",
             )
-            logger.info(f"[{job_id}] Status updated to 'processing'")
 
             # Initialize LLM config
             llm_config = LLMConfig()
