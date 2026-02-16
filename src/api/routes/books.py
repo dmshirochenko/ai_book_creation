@@ -15,6 +15,9 @@ from src.api.schemas import (
     BookRegenerateResponse,
     BookImageStatusResponse,
     FailedImageItem,
+    BatchImageStatusRequest,
+    BatchImageStatusItem,
+    BatchImageStatusResponse,
     JobStatus,
     BookListItem,
     BookListResponse,
@@ -176,6 +179,28 @@ async def get_image_status(
     )
 
 
+@router.post(
+    "/images/status/batch",
+    response_model=BatchImageStatusResponse,
+)
+async def batch_image_status(
+    request: BatchImageStatusRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> BatchImageStatusResponse:
+    """
+    Get image status for multiple books in a single request.
+
+    Returns failed image counts for each book, used by the My Books page
+    to show "fix broken images" buttons without N+1 queries.
+    """
+    job_ids = [uuid.UUID(jid) for jid in request.job_ids]
+    rows = await repo.get_batch_image_status(db, job_ids, user_id)
+    return BatchImageStatusResponse(
+        statuses=[BatchImageStatusItem(**row) for row in rows]
+    )
+
+
 @router.get(
     "/generated",
     response_model=GeneratedBookListResponse,
@@ -190,6 +215,7 @@ async def list_generated_books(
     List completed books with download links for the authenticated user.
     """
     jobs = await repo.list_completed_books_for_user(db, user_id, limit=limit, offset=offset)
+    total_count = await repo.count_completed_books_for_user(db, user_id)
     items = [
         GeneratedBookItem(
             job_id=str(j.id),
@@ -200,7 +226,7 @@ async def list_generated_books(
         )
         for j in jobs
     ]
-    return GeneratedBookListResponse(books=items, total=len(items))
+    return GeneratedBookListResponse(books=items, total=total_count)
 
 
 @router.get(

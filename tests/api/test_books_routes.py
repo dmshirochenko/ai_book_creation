@@ -69,6 +69,10 @@ class TestListGeneratedBooks:
             "src.api.routes.books.repo.list_completed_books_for_user",
             new_callable=AsyncMock,
             return_value=[job],
+        ), patch(
+            "src.api.routes.books.repo.count_completed_books_for_user",
+            new_callable=AsyncMock,
+            return_value=1,
         ):
             resp = await client.get("/api/v1/books/generated")
             assert resp.status_code == 200
@@ -86,6 +90,10 @@ class TestListGeneratedBooks:
             "src.api.routes.books.repo.list_completed_books_for_user",
             new_callable=AsyncMock,
             return_value=[],
+        ), patch(
+            "src.api.routes.books.repo.count_completed_books_for_user",
+            new_callable=AsyncMock,
+            return_value=0,
         ):
             resp = await client.get("/api/v1/books/generated")
             assert resp.status_code == 200
@@ -103,6 +111,10 @@ class TestListGeneratedBooks:
             "src.api.routes.books.repo.list_completed_books_for_user",
             new_callable=AsyncMock,
             return_value=jobs,
+        ), patch(
+            "src.api.routes.books.repo.count_completed_books_for_user",
+            new_callable=AsyncMock,
+            return_value=3,
         ):
             resp = await client.get("/api/v1/books/generated")
             assert resp.status_code == 200
@@ -117,6 +129,10 @@ class TestListGeneratedBooks:
             "src.api.routes.books.repo.list_completed_books_for_user",
             new_callable=AsyncMock,
             return_value=[job],
+        ), patch(
+            "src.api.routes.books.repo.count_completed_books_for_user",
+            new_callable=AsyncMock,
+            return_value=1,
         ):
             resp = await client.get("/api/v1/books/generated")
             assert resp.status_code == 200
@@ -129,6 +145,10 @@ class TestListGeneratedBooks:
             "src.api.routes.books.repo.list_completed_books_for_user",
             new_callable=AsyncMock,
             return_value=[job],
+        ), patch(
+            "src.api.routes.books.repo.count_completed_books_for_user",
+            new_callable=AsyncMock,
+            return_value=1,
         ):
             resp = await client.get("/api/v1/books/generated")
             book = resp.json()["books"][0]
@@ -140,6 +160,10 @@ class TestListGeneratedBooks:
         with patch(
             "src.api.routes.books.repo.list_completed_books_for_user",
             mock_fn,
+        ), patch(
+            "src.api.routes.books.repo.count_completed_books_for_user",
+            new_callable=AsyncMock,
+            return_value=0,
         ):
             await client.get(
                 "/api/v1/books/generated", params={"limit": 10, "offset": 5}

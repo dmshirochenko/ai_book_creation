@@ -5,7 +5,7 @@ Repository layer: async CRUD operations for job persistence.
 import uuid
 from typing import Optional
 
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update, delete, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import BookJob, StoryJob, GeneratedPdf, GeneratedImage
@@ -287,6 +287,52 @@ async def get_failed_images_for_book(
         .order_by(GeneratedImage.page_number)
     )
     return list(result.scalars().all())
+
+
+async def get_batch_image_status(
+    session: AsyncSession,
+    book_job_ids: list[uuid.UUID],
+    user_id: uuid.UUID,
+) -> list[dict]:
+    """Get image status summary (total + failed count) for multiple books in one query."""
+    if not book_job_ids:
+        return []
+    result = await session.execute(
+        select(
+            GeneratedImage.book_job_id,
+            func.count().label("total_images"),
+            func.sum(
+                case((GeneratedImage.status == "failed", 1), else_=0)
+            ).label("failed_images"),
+        )
+        .where(
+            GeneratedImage.book_job_id.in_(book_job_ids),
+            GeneratedImage.user_id == user_id,
+        )
+        .group_by(GeneratedImage.book_job_id)
+    )
+    return [
+        {
+            "job_id": str(row.book_job_id),
+            "total_images": row.total_images,
+            "failed_images": row.failed_images,
+            "has_failed_images": row.failed_images > 0,
+        }
+        for row in result.all()
+    ]
+
+
+async def count_completed_books_for_user(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+) -> int:
+    """Count total completed books for a user (for accurate pagination)."""
+    result = await session.execute(
+        select(func.count())
+        .select_from(BookJob)
+        .where(BookJob.user_id == user_id, BookJob.status == "completed")
+    )
+    return result.scalar_one()
 
 
 async def reset_image_for_retry(
