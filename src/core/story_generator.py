@@ -130,8 +130,6 @@ class StoryGenerator:
         Returns:
             StoryGenerationResult with the generated story or error
         """
-        logger.info(f"Generating story: prompt='{user_prompt[:50]}...', age={age_min}-{age_max}, tone={tone}")
-
         # Pre-validation
         is_safe, violations = self._validate_prompt_safety(user_prompt)
         if not is_safe:

@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from src.api.routes import health, books, stories
+from src.core.cloudwatch_logging import setup_cloudwatch_logging, flush_cloudwatch_logging
 from src.db.engine import init_db, close_db
 
 
@@ -31,6 +32,9 @@ load_dotenv()
 async def lifespan(app: FastAPI):
     """Application lifespan handler for startup/shutdown."""
     logger.info("Application starting up...")
+
+    # CloudWatch logging (sends pipeline logs only, opt-in via CLOUDWATCH_ENABLED=true)
+    setup_cloudwatch_logging()
 
     import os
     from src.core.storage import is_r2_configured
@@ -55,6 +59,7 @@ async def lifespan(app: FastAPI):
     # Shutdown: cleanup
     await close_db()
     logger.info("Application shutting down...")
+    flush_cloudwatch_logging()
 
 
 app = FastAPI(

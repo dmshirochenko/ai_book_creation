@@ -32,8 +32,7 @@ async def generate_book_task(
     Background task to generate the book.
     Uses its own DB session (background tasks run outside FastAPI dependency injection).
     """
-    logger.info(f"[{job_id}] Starting book generation task")
-    logger.info(f"[{job_id}] Title: {request.title}")
+    logger.info(f"[{job_id}] Starting book generation task: '{request.title}'")
 
     session_factory = get_session_factory()
     if session_factory is None:
@@ -48,10 +47,8 @@ async def generate_book_task(
                 session, uuid.UUID(job_id),
                 status="processing", progress="Starting book generation...",
             )
-            logger.info(f"[{job_id}] Status updated to 'processing'")
 
             story_text = request.story
-            logger.debug(f"[{job_id}] Story length: {len(story_text)} characters")
 
             logger.info(f"[{job_id}] Book settings: age {request.age_min}-{request.age_max}, language: {request.language}")
 
@@ -126,7 +123,6 @@ async def generate_book_task(
                         # Use suggested background color if not specified in request
                         if not request.background_color and visual_context.background_color:
                             request.background_color = visual_context.background_color
-                            logger.info(f"[{job_id}] Using suggested background color: {visual_context.background_color}")
                     else:
                         logger.warning(f"[{job_id}] Could not extract visual context: {analysis_response.error if not analysis_response.success else 'empty response'}")
                 else:
@@ -173,8 +169,6 @@ async def generate_book_task(
                         for p in book_content.pages
                     ]
 
-                    logger.info(f"[{job_id}] Page data for image generation: {[(p['page_number'], p['page_type']) for p in page_data]}")
-
                     story_context = " ".join(
                         [
                             p.content
@@ -188,8 +182,6 @@ async def generate_book_task(
                         pages=page_data,
                         story_context=story_context,
                     )
-                    logger.info(f"[{job_id}] Image results: {[(pn, r.success, r.error if not r.success else 'OK') for pn, r in image_results.items()]}")
-
                     # Create DB rows for generated images
                     images = {}
                     for page_num, result in image_results.items():
@@ -251,8 +243,6 @@ async def generate_book_task(
                         images=images,
                     ),
                 )
-                logger.info(f"[{job_id}] PDFs generated: {booklet_filename}, {review_filename}")
-
                 # Upload to R2
                 booklet_r2_key = f"pdfs/{job_id}/{booklet_filename}"
                 review_r2_key = f"pdfs/{job_id}/{review_filename}"
