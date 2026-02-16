@@ -134,6 +134,27 @@ class GeneratedBookListResponse(BaseModel):
     total: int
 
 
+class BatchImageStatusRequest(BaseModel):
+    """Request schema for batch image status check."""
+
+    job_ids: List[str] = Field(..., description="List of book job IDs to check", max_length=100)
+
+
+class BatchImageStatusItem(BaseModel):
+    """Image status for a single book in a batch response."""
+
+    job_id: str
+    total_images: int
+    failed_images: int
+    has_failed_images: bool
+
+
+class BatchImageStatusResponse(BaseModel):
+    """Response schema for batch image status check."""
+
+    statuses: List[BatchImageStatusItem]
+
+
 class ErrorResponse(BaseModel):
     """Standard error response."""
 
