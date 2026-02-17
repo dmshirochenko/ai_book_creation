@@ -96,7 +96,7 @@ Generate print-ready PDF booklets from stories for young children.
 # Trusted Host middleware — reject requests with unexpected Host headers
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=["api.talehop.com", "localhost", "127.0.0.1"],
+    allowed_hosts=["api.talehop.com", "localhost", "127.0.0.1", "test"],
 )
 
 # CORS middleware — only allow frontend and Supabase origins
