@@ -8,6 +8,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from dotenv import load_dotenv
 
@@ -92,13 +93,24 @@ Generate print-ready PDF booklets from stories for young children.
     lifespan=lifespan,
 )
 
-# CORS middleware
+# Trusted Host middleware — reject requests with unexpected Host headers
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["api.talehop.com", "localhost", "127.0.0.1"],
+)
+
+# CORS middleware — only allow frontend and Supabase origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure for production
+    allow_origins=[
+        "https://talehop.com",
+        "https://www.talehop.com",
+        "http://localhost:8080",
+        "http://localhost:5173",
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-User-Id"],
 )
 
 # Include routers
