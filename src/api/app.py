@@ -5,6 +5,7 @@ Run with: python main.py --reload
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -63,8 +64,13 @@ async def lifespan(app: FastAPI):
     flush_cloudwatch_logging()
 
 
+_disable_docs = os.getenv("DISABLE_DOCS", "true").lower() == "true"
+
 app = FastAPI(
     title="Children's Book Generator API",
+    docs_url=None if _disable_docs else "/docs",
+    redoc_url=None if _disable_docs else "/redoc",
+    openapi_url=None if _disable_docs else "/openapi.json",
     description="""
 Generate print-ready PDF booklets from stories for young children.
 
