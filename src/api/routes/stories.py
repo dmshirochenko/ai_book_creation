@@ -272,7 +272,6 @@ async def get_story_status(
         generated_story_json=job.generated_story_json,
         story_length=job.story_length,
         tokens_used=job.tokens_used,
-        book_job_id=str(job.book_job_id) if job.book_job_id else None,
     )
 
 

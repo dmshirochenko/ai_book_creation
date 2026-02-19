@@ -104,7 +104,7 @@ class TestStoryCreateRequest:
         req = StoryCreateRequest(prompt="A kitten finds a magical garden in the yard")
         assert req.tone == "cheerful"
         assert req.length == "medium"
-        assert req.generate_book is False
+        assert req.author == "A Bedtime Story"
 
     def test_prompt_too_short(self):
         with pytest.raises(ValidationError):
