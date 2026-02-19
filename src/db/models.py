@@ -63,8 +63,6 @@ class BookJob(Base):
     images: Mapped[list["GeneratedImage"]] = relationship(
         back_populates="book_job", cascade="all, delete-orphan"
     )
-    story_job: Mapped["StoryJob | None"] = relationship(back_populates="book_job")
-
     __table_args__ = (
         CheckConstraint(
             "status IN ('pending', 'processing', 'completed', 'failed', 'deleted')",
@@ -100,11 +98,6 @@ class StoryJob(Base):
     story_length: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    book_job_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("book_jobs.id", ondelete="SET NULL"),
-        nullable=True,
-    )
     request_params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -119,9 +112,6 @@ class StoryJob(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    # Relationships
-    book_job: Mapped["BookJob | None"] = relationship(back_populates="story_job")
-
     __table_args__ = (
         CheckConstraint(
             "status IN ('pending', 'processing', 'completed', 'failed')",
@@ -129,7 +119,6 @@ class StoryJob(Base):
         ),
         Index("idx_story_jobs_user_id", "user_id"),
         Index("idx_story_jobs_status", "status"),
-        Index("idx_story_jobs_book_job_id", "book_job_id"),
     )
 
 

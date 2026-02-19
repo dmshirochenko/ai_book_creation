@@ -196,10 +196,6 @@ class StoryCreateRequest(BaseModel):
     )
     language: str = Field("English", description="Story language")
     author: str = Field("A Bedtime Story", description="Author name for book generation")
-    generate_book: bool = Field(
-        False,
-        description="Automatically generate book PDF after story creation"
-    )
 
     model_config = {
         "json_schema_extra": {
@@ -211,8 +207,7 @@ class StoryCreateRequest(BaseModel):
                     "tone": "cheerful",
                     "length": "medium",
                     "language": "English",
-                    "author": "A Bedtime Story",
-                    "generate_book": False
+                    "author": "A Bedtime Story"
                 }
             ]
         }
@@ -238,8 +233,6 @@ class StoryJobStatus(BaseModel):
     story_length: Optional[int] = Field(None, description="Number of pages/lines in story")
     tokens_used: Optional[int] = Field(None, description="Tokens used for generation")
 
-    # If generate_book was requested
-    book_job_id: Optional[str] = Field(None, description="Book generation job ID if requested")
 
 
 class StoryCreateResponse(BaseModel):

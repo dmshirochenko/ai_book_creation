@@ -4,7 +4,6 @@ Background tasks for story creation.
 Extracted from src/api/routes/stories.py to keep route handlers thin.
 """
 
-import asyncio
 import logging
 import uuid
 
@@ -98,55 +97,6 @@ async def create_story_task(
             )
 
             logger.info(f"[{job_id}] Story created: '{result.title}', {result.page_count} pages, {result.tokens_used} tokens")
-
-            # If generate_book requested, create book generation job
-            if request.generate_book:
-                logger.info(f"[{job_id}] User requested automatic book generation")
-                try:
-                    from src.tasks.book_tasks import generate_book_task
-                    from src.api.schemas import BookGenerateRequest
-
-                    book_job_id = uuid.uuid4()
-
-                    # Create book request with the generated story
-                    book_request = BookGenerateRequest(
-                        story=f"{result.title}\n{result.story}",
-                        story_structured=result.story_structured,
-                        title=result.title,
-                        author=request.author,
-                        age_min=request.age_min,
-                        age_max=request.age_max,
-                        language=request.language,
-                        generate_images=False,  # User can enable this later if desired
-                    )
-
-                    # Create book job in database
-                    await repo.create_book_job(
-                        session,
-                        job_id=book_job_id,
-                        user_id=user_id,
-                        request_params=book_request.model_dump(),
-                    )
-
-                    # Start book generation as a concurrent async task
-                    asyncio.create_task(
-                        generate_book_task(str(book_job_id), book_request, user_id)
-                    )
-
-                    # Store book job reference
-                    await repo.update_story_job(
-                        session, uuid.UUID(job_id),
-                        book_job_id=book_job_id,
-                        progress=f"Story created successfully! Book generation started (job {book_job_id}).",
-                    )
-                    logger.info(f"[{job_id}] Started book generation job {book_job_id}")
-
-                except Exception as e:
-                    logger.error(f"[{job_id}] Failed to start book generation: {str(e)}", exc_info=True)
-                    await repo.update_story_job(
-                        session, uuid.UUID(job_id),
-                        progress=f"Story created successfully! Note: Book generation failed to start: {str(e)}",
-                    )
 
         except Exception as e:
             logger.error(f"[{job_id}] Story creation failed: {str(e)}", exc_info=True)
