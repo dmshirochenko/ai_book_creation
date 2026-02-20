@@ -14,7 +14,7 @@ class BookGenerateRequest(BaseModel):
     story: str = Field(..., description="Story text to convert into a book")
     story_structured: Optional[dict] = Field(None, description="Structured story JSON from story generation: {title, pages: [{text}]}")
     title: Optional[str] = Field(None, description="Book title (extracted from story if not provided)")
-    author: str = Field("A Bedtime Story", description="Author name for the cover")
+    author: str = Field("TaleHop Stories", description="Author name for the cover")
     age_min: int = Field(2, ge=1, le=10, description="Minimum target age")
     age_max: int = Field(4, ge=1, le=10, description="Maximum target age")
     language: str = Field("English", description="Target language for the book")
@@ -44,7 +44,7 @@ class BookGenerateRequest(BaseModel):
                 {
                     "story": "Once upon a time, there was a little bunny who loved to hop in the meadow.",
                     "title": "The Happy Bunny",
-                    "author": "A Bedtime Story",
+                    "author": "TaleHop Stories",
                     "age_min": 2,
                     "age_max": 4,
                     "language": "English",
@@ -195,7 +195,7 @@ class StoryCreateRequest(BaseModel):
         description="Story length (short=6-8 pages, medium=10-12, long=14-16)"
     )
     language: str = Field("English", description="Story language")
-    author: str = Field("A Bedtime Story", description="Author name for book generation")
+    author: str = Field("TaleHop Stories", description="Author name for book generation")
 
     model_config = {
         "json_schema_extra": {
@@ -207,7 +207,7 @@ class StoryCreateRequest(BaseModel):
                     "tone": "cheerful",
                     "length": "medium",
                     "language": "English",
-                    "author": "A Bedtime Story"
+                    "author": "TaleHop Stories"
                 }
             ]
         }
