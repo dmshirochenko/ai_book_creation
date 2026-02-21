@@ -222,6 +222,7 @@ STORY REQUIREMENTS:
 
 TARGET AUDIENCE: {age_min}-{age_max} years old
 LANGUAGE: {language}
+IMPORTANT: You MUST write the entire story (title and all page text) in {language}. Do NOT use any other language. All output text must be in {language}.
 TONE: {tone} (cheerful, calm, adventurous, or silly)
 LENGTH: {length} pages (short=6-8, medium=10-12, long=14-16)
 

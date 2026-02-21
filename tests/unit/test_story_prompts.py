@@ -143,6 +143,17 @@ class TestBuildStoryCreationPrompt:
         )
         assert "silly" in result
 
+    def test_includes_language_instruction(self):
+        result = build_story_creation_prompt(
+            user_prompt="A kitten finds a ball",
+            age_min=2, age_max=4,
+            tone="cheerful", length="medium",
+            language="Russian",
+        )
+        assert "LANGUAGE: Russian" in result
+        assert "MUST write the entire story" in result
+        assert "in Russian" in result
+
     def test_unknown_length_defaults(self):
         result = build_story_creation_prompt(
             user_prompt="test",
