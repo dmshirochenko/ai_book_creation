@@ -14,6 +14,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from dotenv import load_dotenv
 
+from src.api.middleware import ApiKeyMiddleware
 from src.api.routes import health, books, stories, credits
 from src.core.cloudwatch_logging import setup_cloudwatch_logging, flush_cloudwatch_logging
 from src.db.engine import init_db, close_db, get_session_factory
@@ -124,6 +125,14 @@ Generate print-ready PDF booklets from stories for young children.
     """,
     version="1.0.0",
     lifespan=lifespan,
+)
+
+# API key middleware — validates shared secret from edge functions
+_api_shared_secret = os.getenv("API_SHARED_SECRET")
+app.add_middleware(
+    ApiKeyMiddleware,
+    api_key=_api_shared_secret,
+    exempt_paths={"/", "/api/v1/health"},
 )
 
 # Trusted Host middleware — reject requests with unexpected Host headers
