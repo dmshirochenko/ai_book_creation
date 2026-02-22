@@ -57,7 +57,10 @@ async def create_story_task(
                         await credit_service.release(usage_log_id, user_id)
                         logger.info(f"[{job_id}] Credits released: usage_log={usage_log_id}")
                     except Exception as release_err:
-                        logger.error(f"[{job_id}] Failed to release credits: {release_err}")
+                        logger.error(
+                            f"[{job_id}] Failed to release credits: usage_log={usage_log_id}, user={user_id}, error={release_err}",
+                            exc_info=True,
+                        )
                 return
 
             # Increase max_tokens for story generation (stories need more space than adaptation)
@@ -97,7 +100,10 @@ async def create_story_task(
                         await credit_service.release(usage_log_id, user_id)
                         logger.info(f"[{job_id}] Credits released: usage_log={usage_log_id}")
                     except Exception as release_err:
-                        logger.error(f"[{job_id}] Failed to release credits: {release_err}")
+                        logger.error(
+                            f"[{job_id}] Failed to release credits: usage_log={usage_log_id}, user={user_id}, error={release_err}",
+                            exc_info=True,
+                        )
                 return
 
             # Success - store results

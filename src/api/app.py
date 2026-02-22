@@ -79,8 +79,8 @@ async def lifespan(app: FastAPI):
     # Initialize database
     await init_db()
 
-    # Start periodic credit reservation cleanup (every 10 min, stale after 30 min)
-    cleanup_task = asyncio.create_task(_cleanup_stale_reservations())
+    # Start periodic credit reservation cleanup (every 5 min, stale after 15 min)
+    cleanup_task = asyncio.create_task(_cleanup_stale_reservations(interval_seconds=300, ttl_minutes=15))
 
     yield
 
