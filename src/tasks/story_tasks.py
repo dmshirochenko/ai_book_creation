@@ -12,13 +12,15 @@ from src.core.config import LLMConfig
 from src.core.story_generator import StoryGenerator
 from src.db.engine import get_session_factory
 from src.db import repository as repo
+from src.services.credit_service import CreditService
 
 
 logger = logging.getLogger(__name__)
 
 
 async def create_story_task(
-    job_id: str, request: StoryCreateRequest, user_id: uuid.UUID
+    job_id: str, request: StoryCreateRequest, user_id: uuid.UUID,
+    usage_log_id: uuid.UUID | None = None,
 ) -> None:
     """
     Background task to create a story.
@@ -48,6 +50,14 @@ async def create_story_task(
                     status="failed",
                     error="OpenRouter API key not configured. Set OPENROUTER_API_KEY in .env file.",
                 )
+                # Release reserved credits
+                if usage_log_id:
+                    try:
+                        credit_service = CreditService(session)
+                        await credit_service.release(usage_log_id)
+                        logger.info(f"[{job_id}] Credits released: usage_log={usage_log_id}")
+                    except Exception as release_err:
+                        logger.error(f"[{job_id}] Failed to release credits: {release_err}")
                 return
 
             # Increase max_tokens for story generation (stories need more space than adaptation)
@@ -80,6 +90,14 @@ async def create_story_task(
                     safety_status=result.safety_status,
                     safety_reasoning=result.safety_reasoning,
                 )
+                # Release reserved credits
+                if usage_log_id:
+                    try:
+                        credit_service = CreditService(session)
+                        await credit_service.release(usage_log_id)
+                        logger.info(f"[{job_id}] Credits released: usage_log={usage_log_id}")
+                    except Exception as release_err:
+                        logger.error(f"[{job_id}] Failed to release credits: {release_err}")
                 return
 
             # Success - store results
@@ -96,13 +114,26 @@ async def create_story_task(
                 safety_reasoning=result.safety_reasoning,
             )
 
+            # Confirm credit deduction
+            if usage_log_id:
+                credit_service = CreditService(session)
+                await credit_service.confirm(usage_log_id)
+                logger.info(f"[{job_id}] Credits confirmed: usage_log={usage_log_id}")
+
             logger.info(f"[{job_id}] Story created: '{result.title}', {result.page_count} pages, {result.tokens_used} tokens")
 
         except Exception as e:
             logger.error(f"[{job_id}] Story creation failed: {str(e)}", exc_info=True)
-            await repo.update_story_job(
-                session, uuid.UUID(job_id),
-                status="failed",
-                error=str(e),
-                progress=f"Failed: {str(e)}",
-            )
+            try:
+                async with session_factory() as err_session:
+                    await repo.update_story_job(
+                        err_session, uuid.UUID(job_id),
+                        status="failed", error=str(e), progress=f"Failed: {str(e)}",
+                    )
+                    # Release reserved credits with fresh session
+                    if usage_log_id:
+                        credit_service = CreditService(err_session)
+                        await credit_service.release(usage_log_id)
+                        logger.info(f"[{job_id}] Credits released after failure")
+            except Exception as err_exc:
+                logger.error(f"[{job_id}] Could not record failure: {err_exc}", exc_info=True)

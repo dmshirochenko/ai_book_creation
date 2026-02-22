@@ -27,6 +27,7 @@ from src.core.config import LLMConfig
 from src.core.story_generator import StoryGenerator
 from src.db import repository as repo
 from src.tasks.story_tasks import create_story_task
+from src.services.credit_service import CreditService, InsufficientCreditsError
 
 
 # Configure logging
@@ -77,15 +78,43 @@ async def create_story(
             detail="age_min must be less than or equal to age_max",
         )
 
-    # Create job in database
     job_id = uuid.uuid4()
+
+    # Reserve credits
+    credit_service = CreditService(db)
+    try:
+        story_cost = await credit_service.calculate_story_cost()
+        pricing_snapshot = await credit_service.get_pricing()
+        usage_log_id = await credit_service.reserve(
+            user_id=user_id,
+            amount=story_cost,
+            job_id=job_id,
+            job_type="story",
+            description="Story generation",
+            metadata={
+                "prompt": request.prompt[:100],
+                "total_cost": float(story_cost),
+                "pricing_snapshot": {k: float(v) for k, v in pricing_snapshot.items()},
+            },
+        )
+    except InsufficientCreditsError as e:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "message": f"Insufficient credits: have {float(e.balance)}, need {float(e.required)}",
+                "balance": float(e.balance),
+                "required": float(e.required),
+            },
+        )
+
+    # Create job in database
     await repo.create_story_job(
         db, job_id=job_id, user_id=user_id,
         request_params=request.model_dump(),
     )
 
     # Start background task
-    background_tasks.add_task(create_story_task, str(job_id), request, user_id)
+    background_tasks.add_task(create_story_task, str(job_id), request, user_id, usage_log_id)
 
     return StoryCreateResponse(
         job_id=str(job_id),
