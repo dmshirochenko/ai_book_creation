@@ -9,6 +9,7 @@ import uuid
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
+from starlette.requests import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.schemas import (
@@ -28,6 +29,7 @@ from src.core.story_generator import StoryGenerator
 from src.db import repository as repo
 from src.tasks.story_tasks import create_story_task
 from src.services.credit_service import CreditService, InsufficientCreditsError
+from src.api.rate_limit import limiter
 
 
 # Configure logging
@@ -41,8 +43,10 @@ router = APIRouter(prefix="/stories", tags=["Story Creation"])
     response_model=StoryCreateResponse,
     responses={400: {"model": ErrorResponse}},
 )
+@limiter.limit("5/minute")
 async def create_story(
-    request: StoryCreateRequest,
+    request: Request,
+    body: StoryCreateRequest,
     background_tasks: BackgroundTasks,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
@@ -69,10 +73,10 @@ async def create_story(
     - "A little turtle learns to swim in the ocean"
     - "A friendly bear helps forest animals build a home"
     """
-    if not request.prompt.strip():
+    if not body.prompt.strip():
         raise HTTPException(status_code=400, detail="Story prompt cannot be empty")
 
-    if request.age_min > request.age_max:
+    if body.age_min > body.age_max:
         raise HTTPException(
             status_code=400,
             detail="age_min must be less than or equal to age_max",
@@ -92,7 +96,7 @@ async def create_story(
             job_type="story",
             description="Story generation",
             metadata={
-                "prompt": request.prompt[:100],
+                "prompt": body.prompt[:100],
                 "total_cost": float(story_cost),
                 "pricing_snapshot": {k: float(v) for k, v in pricing_snapshot.items()},
             },
@@ -109,11 +113,11 @@ async def create_story(
     # Create job in database
     await repo.create_story_job(
         db, job_id=job_id, user_id=user_id,
-        request_params=request.model_dump(),
+        request_params=body.model_dump(),
     )
 
     # Start background task
-    background_tasks.add_task(create_story_task, str(job_id), request, user_id, usage_log_id)
+    background_tasks.add_task(create_story_task, str(job_id), body, user_id, usage_log_id)
 
     return StoryCreateResponse(
         job_id=str(job_id),

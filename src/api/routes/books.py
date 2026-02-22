@@ -7,6 +7,7 @@ import logging
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
 from fastapi.responses import RedirectResponse, JSONResponse
+from starlette.requests import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.schemas import (
@@ -30,6 +31,7 @@ from src.core.storage import get_storage
 from src.db import repository as repo
 from src.tasks.book_tasks import generate_book_task, regenerate_book_task
 from src.services.credit_service import CreditService, InsufficientCreditsError
+from src.api.rate_limit import limiter
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -42,8 +44,10 @@ router = APIRouter(prefix="/books", tags=["Books"])
     response_model=BookGenerateResponse,
     responses={400: {"model": ErrorResponse}},
 )
+@limiter.limit("3/minute")
 async def generate_book(
-    request: BookGenerateRequest,
+    request: Request,
+    body: BookGenerateRequest,
     background_tasks: BackgroundTasks,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
@@ -54,10 +58,10 @@ async def generate_book(
     Returns a job ID to track progress. Use `/books/{job_id}/status` to check status
     and `/books/{job_id}/download/{type}` to download the PDFs when complete.
     """
-    if not request.story.strip():
+    if not body.story.strip():
         raise HTTPException(status_code=400, detail="Story text cannot be empty")
 
-    if request.age_min > request.age_max:
+    if body.age_min > body.age_max:
         raise HTTPException(
             status_code=400, detail="age_min must be less than or equal to age_max"
         )
@@ -65,14 +69,14 @@ async def generate_book(
     job_id = uuid.uuid4()
 
     # Calculate page count for cost estimation
-    if request.story_structured and request.story_structured.get("pages"):
-        page_count = len(request.story_structured["pages"])
+    if body.story_structured and body.story_structured.get("pages"):
+        page_count = len(body.story_structured["pages"])
     else:
         from src.core.text_processor import TextProcessor
         processor = TextProcessor(max_sentences_per_page=2, max_chars_per_page=100)
         book_content = processor.process_raw_story(
-            story=request.story, title=request.title or "My Story",
-            author=request.author, language=request.language,
+            story=body.story, title=body.title or "My Story",
+            author=body.author, language=body.language,
         )
         page_count = book_content.total_pages
 
@@ -83,20 +87,20 @@ async def generate_book(
     credit_service = CreditService(db)
     try:
         book_cost = await credit_service.calculate_book_cost(
-            pages=page_count, with_images=request.generate_images,
+            pages=page_count, with_images=body.generate_images,
         )
         pricing_snapshot = await credit_service.get_pricing()
-        cost_per_page_key = "page_with_images" if request.generate_images else "page_without_images"
+        cost_per_page_key = "page_with_images" if body.generate_images else "page_without_images"
         usage_log_id = await credit_service.reserve(
             user_id=user_id,
             amount=book_cost,
             job_id=job_id,
             job_type="book",
-            description=f"Book: {request.title or 'Untitled'} ({page_count} pages{'  with images' if request.generate_images else ''})",
+            description=f"Book: {body.title or 'Untitled'} ({page_count} pages{'  with images' if body.generate_images else ''})",
             metadata={
-                "title": request.title,
+                "title": body.title,
                 "pages": page_count,
-                "with_images": request.generate_images,
+                "with_images": body.generate_images,
                 "cost_per_page": float(pricing_snapshot.get(cost_per_page_key, 0)),
                 "total_cost": float(book_cost),
                 "pricing_snapshot": {k: float(v) for k, v in pricing_snapshot.items()},
@@ -114,11 +118,11 @@ async def generate_book(
     # Create job in database
     await repo.create_book_job(
         db, job_id=job_id, user_id=user_id,
-        request_params=request.model_dump(),
+        request_params=body.model_dump(),
     )
 
     # Start background task
-    background_tasks.add_task(generate_book_task, str(job_id), request, user_id, usage_log_id)
+    background_tasks.add_task(generate_book_task, str(job_id), body, user_id, usage_log_id)
 
     return BookGenerateResponse(
         job_id=str(job_id),

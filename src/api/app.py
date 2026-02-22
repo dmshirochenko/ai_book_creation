@@ -13,8 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from dotenv import load_dotenv
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
 
 from src.api.middleware import ApiKeyMiddleware
+from src.api.rate_limit import limiter
 from src.api.routes import health, books, stories, credits
 from src.core.cloudwatch_logging import setup_cloudwatch_logging, flush_cloudwatch_logging
 from src.db.engine import init_db, close_db, get_session_factory
@@ -126,6 +129,10 @@ Generate print-ready PDF booklets from stories for young children.
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Rate limiter — attach to app state and register error handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # API key middleware — validates shared secret from edge functions
 _api_shared_secret = os.getenv("API_SHARED_SECRET")

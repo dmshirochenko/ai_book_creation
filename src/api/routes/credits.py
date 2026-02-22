@@ -9,6 +9,7 @@ import uuid
 import logging
 
 from fastapi import APIRouter, Depends
+from starlette.requests import Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +23,7 @@ from src.api.schemas import (
 from src.api.deps import get_db, get_current_user_id
 from src.db.models import CreditPricing, CreditUsageLog
 from src.services.credit_service import CreditService
+from src.api.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +52,9 @@ async def get_pricing(
 
 
 @router.get("/balance", response_model=CreditBalanceResponse)
+@limiter.limit("30/minute")
 async def get_balance(
+    request: Request,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> CreditBalanceResponse:
@@ -61,7 +65,9 @@ async def get_balance(
 
 
 @router.get("/usage", response_model=CreditUsageResponse)
+@limiter.limit("30/minute")
 async def get_usage(
+    request: Request,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
     limit: int = 50,

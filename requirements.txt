@@ -30,3 +30,6 @@ aioboto3>=13.0.0
 
 # CloudWatch logging (optional, enable via CLOUDWATCH_ENABLED=true)
 watchtower>=3.0.0
+
+# Rate limiting
+slowapi>=0.1.9
