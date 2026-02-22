@@ -17,6 +17,7 @@ from sqlalchemy import (
     CheckConstraint,
     Index,
     Numeric,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -258,6 +259,12 @@ class UserCredits(Base):
             name="ck_user_credits_remaining_lte_original",
         ),
         Index("idx_user_credits_user_id", "user_id"),
+        Index(
+            "idx_user_credits_stripe_session_id",
+            "stripe_session_id",
+            unique=True,
+            postgresql_where=text("stripe_session_id IS NOT NULL"),
+        ),
     )
 
 
