@@ -20,13 +20,15 @@ from src.core.pdf_generator import generate_both_pdfs
 from src.core.storage import get_storage
 from src.db.engine import get_session_factory
 from src.db import repository as repo
+from src.services.credit_service import CreditService
 
 
 logger = logging.getLogger(__name__)
 
 
 async def generate_book_task(
-    job_id: str, request: BookGenerateRequest, user_id: uuid.UUID
+    job_id: str, request: BookGenerateRequest, user_id: uuid.UUID,
+    usage_log_id: uuid.UUID | None = None,
 ) -> None:
     """
     Background task to generate the book.
@@ -287,6 +289,12 @@ async def generate_book_task(
             )
             logger.info(f"[{job_id}] Book generation completed successfully!")
 
+            # Confirm credit deduction
+            if usage_log_id:
+                credit_service = CreditService(session)
+                await credit_service.confirm(usage_log_id)
+                logger.info(f"[{job_id}] Credits confirmed: usage_log={usage_log_id}")
+
         except Exception as e:
             logger.error(f"[{job_id}] Book generation failed: {str(e)}", exc_info=True)
             # Use a fresh session to record the failure — the original
@@ -301,6 +309,11 @@ async def generate_book_task(
                         error=str(e),
                         progress=f"Failed: {str(e)}",
                     )
+                    # Release reserved credits with fresh session
+                    if usage_log_id:
+                        credit_service = CreditService(err_session)
+                        await credit_service.release(usage_log_id)
+                        logger.info(f"[{job_id}] Credits released after failure")
             except Exception as err_exc:
                 logger.error(
                     f"[{job_id}] Could not record failure status: {err_exc}",
