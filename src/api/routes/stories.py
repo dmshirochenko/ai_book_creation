@@ -101,8 +101,7 @@ async def create_story(
         raise HTTPException(
             status_code=402,
             detail={
-                "message": f"Insufficient credits: have {float(e.balance)}, need {float(e.required)}",
-                "balance": float(e.balance),
+                "message": "Insufficient credits",
                 "required": float(e.required),
             },
         )

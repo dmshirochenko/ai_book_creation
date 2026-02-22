@@ -76,6 +76,9 @@ async def generate_book(
         )
         page_count = book_content.total_pages
 
+    if page_count < 1:
+        raise HTTPException(status_code=400, detail="Book must have at least one page")
+
     # Reserve credits
     credit_service = CreditService(db)
     try:
@@ -103,8 +106,7 @@ async def generate_book(
         raise HTTPException(
             status_code=402,
             detail={
-                "message": f"Insufficient credits: have {float(e.balance)}, need {float(e.required)}",
-                "balance": float(e.balance),
+                "message": "Insufficient credits",
                 "required": float(e.required),
             },
         )
