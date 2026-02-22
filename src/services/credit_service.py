@@ -27,6 +27,11 @@ class InsufficientCreditsError(Exception):
 
 
 class CreditService:
+    ALLOWED_METADATA_KEYS = frozenset({
+        "prompt", "total_cost", "pricing_snapshot", "batches_consumed",
+        "title", "pages", "with_images", "cost_per_page",
+    })
+
     def __init__(self, session: AsyncSession):
         self._session = session
 
@@ -82,7 +87,9 @@ class CreditService:
             remaining_to_consume -= consume
             batches_consumed.append({"batch_id": str(batch.id), "amount": float(consume)})
 
-        metadata_with_batches = {**metadata, "batches_consumed": batches_consumed}
+        # Sanitize metadata keys
+        safe_metadata = {k: v for k, v in metadata.items() if k in self.ALLOWED_METADATA_KEYS}
+        metadata_with_batches = {**safe_metadata, "batches_consumed": batches_consumed}
         usage_log = CreditUsageLog(
             user_id=user_id, job_id=job_id, job_type=job_type,
             credits_used=amount, status="reserved", description=description,

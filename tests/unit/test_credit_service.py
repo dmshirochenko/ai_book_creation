@@ -253,3 +253,28 @@ class TestConfirmWithOwnership:
         mock_session.execute.return_value = mock_result
         await service.confirm(uuid.uuid4(), user_id=uuid.uuid4())
         mock_session.commit.assert_not_called()
+
+
+class TestMetadataSanitization:
+    @pytest.mark.asyncio
+    async def test_unknown_metadata_keys_are_stripped(self, service, mock_session):
+        batch = MagicMock(); batch.id = uuid.uuid4(); batch.remaining_amount = Decimal("10.00")
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [batch]
+        mock_session.execute.return_value = mock_result
+        mock_session.add = MagicMock()
+        async def fake_refresh(obj, **kw):
+            obj.id = uuid.uuid4()
+        mock_session.refresh = fake_refresh
+
+        await service.reserve(
+            user_id=uuid.uuid4(), amount=Decimal("1.00"),
+            job_id=uuid.uuid4(), job_type="story", description="test",
+            metadata={"total_cost": 1.0, "evil_key": "malicious", "prompt": "hello"},
+        )
+
+        # Check that the CreditUsageLog was added with sanitized metadata
+        added_obj = mock_session.add.call_args[0][0]
+        assert "evil_key" not in added_obj.extra_metadata
+        assert "total_cost" in added_obj.extra_metadata
+        assert "prompt" in added_obj.extra_metadata
