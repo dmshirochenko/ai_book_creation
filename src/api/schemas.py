@@ -336,3 +336,48 @@ class StoryResplitResponse(BaseModel):
         ...,
         description="Story text split into pages with narrative-aware breaks"
     )
+
+
+# =============================================================================
+# CREDIT SCHEMAS
+# =============================================================================
+
+class CreditPricingItem(BaseModel):
+    """A single pricing configuration item."""
+    operation: str
+    credit_cost: float
+    description: Optional[str] = None
+
+
+class CreditPricingResponse(BaseModel):
+    """Response for GET /credits/pricing."""
+    pricing: List[CreditPricingItem]
+
+
+class CreditBalanceResponse(BaseModel):
+    """Response for GET /credits/balance."""
+    balance: float
+
+
+class CreditUsageItem(BaseModel):
+    """A single credit usage log entry."""
+    id: str
+    job_id: str
+    job_type: str
+    credits_used: float
+    status: str
+    description: Optional[str] = None
+    metadata: Optional[dict] = None
+    created_at: str
+
+
+class CreditUsageResponse(BaseModel):
+    """Response for GET /credits/usage."""
+    usage: List[CreditUsageItem]
+
+
+class InsufficientCreditsResponse(BaseModel):
+    """Error response when user lacks credits."""
+    detail: str
+    balance: float
+    required: float
