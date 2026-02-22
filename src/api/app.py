@@ -4,6 +4,7 @@ FastAPI application for Children's Book Generator.
 Run with: python main.py --reload
 """
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -15,7 +16,8 @@ from dotenv import load_dotenv
 
 from src.api.routes import health, books, stories, credits
 from src.core.cloudwatch_logging import setup_cloudwatch_logging, flush_cloudwatch_logging
-from src.db.engine import init_db, close_db
+from src.db.engine import init_db, close_db, get_session_factory
+from src.services.credit_service import CreditService
 
 
 # Configure logging
@@ -28,6 +30,23 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
+
+
+async def _cleanup_stale_reservations(interval_seconds: int = 600, ttl_minutes: int = 30) -> None:
+    """Periodically release credit reservations older than ttl_minutes."""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            session_factory = get_session_factory()
+            if session_factory is None:
+                continue
+            async with session_factory() as session:
+                service = CreditService(session)
+                released = await service.cleanup_stale_reservations(ttl_minutes=ttl_minutes)
+                if released:
+                    logger.info(f"Released {released} stale credit reservation(s)")
+        except Exception:
+            logger.exception("Error cleaning up stale credit reservations")
 
 
 @asynccontextmanager
@@ -56,9 +75,17 @@ async def lifespan(app: FastAPI):
     # Initialize database
     await init_db()
 
+    # Start periodic credit reservation cleanup (every 10 min, stale after 30 min)
+    cleanup_task = asyncio.create_task(_cleanup_stale_reservations())
+
     yield
 
-    # Shutdown: cleanup
+    # Shutdown: cancel cleanup and close resources
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
     await close_db()
     logger.info("Application shutting down...")
     flush_cloudwatch_logging()
