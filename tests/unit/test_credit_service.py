@@ -232,3 +232,24 @@ class TestRelease:
     async def test_release_none_id_is_noop(self, service, mock_session):
         await service.release(None)
         mock_session.execute.assert_not_called()
+
+
+class TestConfirmWithOwnership:
+    @pytest.mark.asyncio
+    async def test_confirm_with_matching_user(self, service, mock_session):
+        user_id = uuid.uuid4()
+        mock_log = MagicMock(); mock_log.status = "reserved"; mock_log.user_id = user_id
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_log
+        mock_session.execute.return_value = mock_result
+        await service.confirm(uuid.uuid4(), user_id=user_id)
+        assert mock_log.status == "confirmed"
+        mock_session.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_confirm_with_wrong_user_is_noop(self, service, mock_session):
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_session.execute.return_value = mock_result
+        await service.confirm(uuid.uuid4(), user_id=uuid.uuid4())
+        mock_session.commit.assert_not_called()

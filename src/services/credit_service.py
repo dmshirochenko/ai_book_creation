@@ -96,12 +96,13 @@ class CreditService:
         logger.info(f"Reserved {amount} credits for user {user_id}, job {job_id} ({job_type}), usage_log={usage_log.id}")
         return usage_log.id
 
-    async def confirm(self, usage_log_id: Optional[uuid.UUID]) -> None:
+    async def confirm(self, usage_log_id: Optional[uuid.UUID], user_id: Optional[uuid.UUID] = None) -> None:
         if usage_log_id is None:
             return
-        result = await self._session.execute(
-            select(CreditUsageLog).where(CreditUsageLog.id == usage_log_id)
-        )
+        query = select(CreditUsageLog).where(CreditUsageLog.id == usage_log_id).with_for_update()
+        if user_id is not None:
+            query = query.where(CreditUsageLog.user_id == user_id)
+        result = await self._session.execute(query)
         log = result.scalar_one_or_none()
         if not log or log.status != "reserved":
             return
@@ -109,12 +110,13 @@ class CreditService:
         await self._session.commit()
         logger.info(f"Confirmed credit usage {usage_log_id}")
 
-    async def release(self, usage_log_id: Optional[uuid.UUID]) -> None:
+    async def release(self, usage_log_id: Optional[uuid.UUID], user_id: Optional[uuid.UUID] = None) -> None:
         if usage_log_id is None:
             return
-        result = await self._session.execute(
-            select(CreditUsageLog).where(CreditUsageLog.id == usage_log_id)
-        )
+        query = select(CreditUsageLog).where(CreditUsageLog.id == usage_log_id).with_for_update()
+        if user_id is not None:
+            query = query.where(CreditUsageLog.user_id == user_id)
+        result = await self._session.execute(query)
         log = result.scalar_one_or_none()
         if not log or log.status != "reserved":
             return

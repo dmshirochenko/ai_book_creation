@@ -292,7 +292,7 @@ async def generate_book_task(
             # Confirm credit deduction
             if usage_log_id:
                 credit_service = CreditService(session)
-                await credit_service.confirm(usage_log_id)
+                await credit_service.confirm(usage_log_id, user_id)
                 logger.info(f"[{job_id}] Credits confirmed: usage_log={usage_log_id}")
 
         except Exception as e:
@@ -312,7 +312,7 @@ async def generate_book_task(
                     # Release reserved credits with fresh session
                     if usage_log_id:
                         credit_service = CreditService(err_session)
-                        await credit_service.release(usage_log_id)
+                        await credit_service.release(usage_log_id, user_id)
                         logger.info(f"[{job_id}] Credits released after failure")
             except Exception as err_exc:
                 logger.error(
