@@ -4,6 +4,7 @@ SQLAlchemy async ORM models for job persistence.
 
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     ForeignKey,
     CheckConstraint,
     Index,
+    Numeric,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -209,4 +211,127 @@ class GeneratedImage(Base):
         Index("idx_generated_images_book_job_id", "book_job_id"),
         Index("idx_generated_images_prompt_hash", "prompt_hash"),
         Index("idx_generated_images_user_id", "user_id"),
+    )
+
+
+class UserCredits(Base):
+    """Per-batch credit ledger. Each purchase or bonus is a separate row."""
+    __tablename__ = "user_credits"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    original_amount: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), nullable=False
+    )
+    remaining_amount: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), nullable=False
+    )
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    stripe_session_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_refunded: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "remaining_amount >= 0",
+            name="ck_user_credits_remaining_non_negative",
+        ),
+        CheckConstraint(
+            "remaining_amount <= original_amount",
+            name="ck_user_credits_remaining_lte_original",
+        ),
+        Index("idx_user_credits_user_id", "user_id"),
+    )
+
+
+class CreditPricing(Base):
+    __tablename__ = "credit_pricing"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    operation: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    credit_cost: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class CreditUsageLog(Base):
+    __tablename__ = "credit_usage_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    job_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    credits_used: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="reserved"
+    )
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extra_metadata: Mapped[dict | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
+    reserved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('reserved', 'confirmed', 'refunded')",
+            name="ck_credit_usage_logs_status",
+        ),
+        CheckConstraint(
+            "job_type IN ('story', 'book')",
+            name="ck_credit_usage_logs_job_type",
+        ),
+        Index("idx_credit_usage_logs_user_id", "user_id"),
+        Index("idx_credit_usage_logs_status", "status"),
+        Index("idx_credit_usage_logs_created_at", "created_at"),
     )
