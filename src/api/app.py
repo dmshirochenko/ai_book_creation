@@ -13,7 +13,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from dotenv import load_dotenv
 
-from src.api.routes import health, books, stories
+from src.api.routes import health, books, stories, credits
 from src.core.cloudwatch_logging import setup_cloudwatch_logging, flush_cloudwatch_logging
 from src.db.engine import init_db, close_db
 
@@ -123,6 +123,7 @@ app.add_middleware(
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(books.router, prefix="/api/v1")
 app.include_router(stories.router, prefix="/api/v1")
+app.include_router(credits.router, prefix="/api/v1")
 
 
 @app.get("/", include_in_schema=False)
