@@ -367,7 +367,6 @@ class CreditUsageItem(BaseModel):
     credits_used: float
     status: str
     description: Optional[str] = None
-    metadata: Optional[dict] = None
     created_at: str
 
 

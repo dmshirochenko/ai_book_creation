@@ -41,7 +41,7 @@ async def get_pricing(
         pricing=[
             CreditPricingItem(
                 operation=r.operation,
-                credit_cost=float(r.credit_cost),
+                credit_cost=float(round(r.credit_cost, 2)),
                 description=r.description,
             )
             for r in rows
@@ -57,7 +57,7 @@ async def get_balance(
     """Get the authenticated user's credit balance."""
     service = CreditService(db)
     balance = await service.get_balance(user_id)
-    return CreditBalanceResponse(balance=float(balance))
+    return CreditBalanceResponse(balance=float(round(balance, 2)))
 
 
 @router.get("/usage", response_model=CreditUsageResponse)
@@ -67,6 +67,7 @@ async def get_usage(
     limit: int = 50,
 ) -> CreditUsageResponse:
     """Get credit usage history for the authenticated user."""
+    limit = max(1, min(limit, 100))
     result = await db.execute(
         select(CreditUsageLog)
         .where(CreditUsageLog.user_id == user_id)
@@ -80,10 +81,9 @@ async def get_usage(
                 id=str(log.id),
                 job_id=str(log.job_id),
                 job_type=log.job_type,
-                credits_used=float(log.credits_used),
+                credits_used=float(round(log.credits_used, 2)),
                 status=log.status,
                 description=log.description,
-                metadata=log.extra_metadata,
                 created_at=log.created_at.isoformat(),
             )
             for log in logs
