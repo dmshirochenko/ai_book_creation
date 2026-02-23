@@ -380,3 +380,23 @@ class InsufficientCreditsResponse(BaseModel):
     detail: str
     balance: float
     required: float
+
+
+class UsageLogItem(BaseModel):
+    """A single usage log entry with metadata."""
+    id: str
+    job_id: str
+    job_type: str
+    credits_used: float
+    status: str
+    description: Optional[str] = None
+    metadata: Optional[dict] = None
+    created_at: str
+
+
+class PaginatedUsageLogsResponse(BaseModel):
+    """Paginated response for GET /credits/usage-logs."""
+    items: List[UsageLogItem]
+    total: int
+    page: int
+    page_size: int

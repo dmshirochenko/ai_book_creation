@@ -7,6 +7,8 @@ All credit amounts are returned as float (serialized from Decimal).
 
 import uuid
 import logging
+from datetime import datetime, timezone, timedelta
+from typing import Optional
 
 from fastapi import APIRouter, Depends
 from starlette.requests import Request
@@ -19,6 +21,8 @@ from src.api.schemas import (
     CreditBalanceResponse,
     CreditUsageItem,
     CreditUsageResponse,
+    UsageLogItem,
+    PaginatedUsageLogsResponse,
 )
 from src.api.deps import get_db, get_current_user_id
 from src.db.models import CreditPricing, CreditUsageLog
@@ -94,4 +98,60 @@ async def get_usage(
             )
             for log in logs
         ]
+    )
+
+
+@router.get("/usage-logs", response_model=PaginatedUsageLogsResponse)
+@limiter.limit("30/minute")
+async def get_usage_logs(
+    request: Request,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> PaginatedUsageLogsResponse:
+    """Get paginated credit usage logs with date range filtering."""
+    now = datetime.now(timezone.utc)
+
+    if from_date:
+        parsed_from = datetime.fromisoformat(from_date.replace("Z", "+00:00"))
+    else:
+        parsed_from = now - timedelta(hours=24)
+
+    if to_date:
+        parsed_to = datetime.fromisoformat(to_date.replace("Z", "+00:00"))
+    else:
+        parsed_to = now
+
+    page = max(1, page)
+    page_size = max(1, min(page_size, 100))
+
+    service = CreditService(db)
+    items, total = await service.get_usage_logs(
+        user_id=user_id,
+        from_date=parsed_from,
+        to_date=parsed_to,
+        page=page,
+        page_size=page_size,
+    )
+
+    return PaginatedUsageLogsResponse(
+        items=[
+            UsageLogItem(
+                id=str(log.id),
+                job_id=str(log.job_id),
+                job_type=log.job_type,
+                credits_used=float(round(log.credits_used, 2)),
+                status=log.status,
+                description=log.description,
+                metadata=log.extra_metadata,
+                created_at=log.created_at.isoformat(),
+            )
+            for log in items
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
     )
