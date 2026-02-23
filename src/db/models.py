@@ -232,7 +232,11 @@ class UserCredits(Base):
         Numeric(10, 2), nullable=False
     )
     source: Mapped[str] = mapped_column(String(30), nullable=False)
-    stripe_session_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    credit_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("credit_transactions.id"),
+        nullable=True,
+    )
     is_refunded: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )
@@ -260,10 +264,10 @@ class UserCredits(Base):
         ),
         Index("idx_user_credits_user_id", "user_id"),
         Index(
-            "idx_user_credits_stripe_session_id",
-            "stripe_session_id",
+            "idx_user_credits_credit_transaction_id",
+            "credit_transaction_id",
             unique=True,
-            postgresql_where=text("stripe_session_id IS NOT NULL"),
+            postgresql_where=text("credit_transaction_id IS NOT NULL"),
         ),
     )
 
@@ -341,4 +345,48 @@ class CreditUsageLog(Base):
         Index("idx_credit_usage_logs_user_id", "user_id"),
         Index("idx_credit_usage_logs_status", "status"),
         Index("idx_credit_usage_logs_created_at", "created_at"),
+    )
+
+
+class CreditTransaction(Base):
+    """Immutable Stripe transaction ledger. Single entry point for all money events."""
+    __tablename__ = "credit_transactions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    transaction_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    stripe_session_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stripe_event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extra_metadata: Mapped[dict | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "transaction_type IN ('purchase', 'refund')",
+            name="ck_credit_transactions_type",
+        ),
+        Index("idx_credit_transactions_user_id", "user_id"),
+        Index(
+            "idx_credit_transactions_stripe_event_id",
+            "stripe_event_id",
+            unique=True,
+            postgresql_where=text("stripe_event_id IS NOT NULL"),
+        ),
+        Index(
+            "idx_credit_transactions_stripe_session_id",
+            "stripe_session_id",
+            postgresql_where=text("stripe_session_id IS NOT NULL"),
+        ),
     )
