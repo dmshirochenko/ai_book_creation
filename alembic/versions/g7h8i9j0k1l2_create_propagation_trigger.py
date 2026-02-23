@@ -38,7 +38,7 @@ def upgrade() -> None:
 
             RETURN NEW;
         END;
-        $$ LANGUAGE plpgsql SECURITY DEFINER;
+        $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public';
     """)
 
     op.execute("""
