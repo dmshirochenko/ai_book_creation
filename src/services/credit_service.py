@@ -58,6 +58,38 @@ class CreditService:
         )
         return result.scalar_one()
 
+    async def get_usage_logs(
+        self,
+        user_id: uuid.UUID,
+        from_date: datetime,
+        to_date: datetime,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[CreditUsageLog], int]:
+        """Return paginated usage logs filtered by date range."""
+        base_filter = [
+            CreditUsageLog.user_id == user_id,
+            CreditUsageLog.created_at >= from_date,
+            CreditUsageLog.created_at <= to_date,
+        ]
+
+        count_result = await self._session.execute(
+            select(func.count(CreditUsageLog.id)).where(*base_filter)
+        )
+        total = count_result.scalar_one()
+
+        offset = (page - 1) * page_size
+        items_result = await self._session.execute(
+            select(CreditUsageLog)
+            .where(*base_filter)
+            .order_by(CreditUsageLog.created_at.desc())
+            .offset(offset)
+            .limit(page_size)
+        )
+        items = items_result.scalars().all()
+
+        return items, total
+
     async def reserve(
         self, user_id: uuid.UUID, amount: Decimal, job_id: uuid.UUID,
         job_type: str, description: str, metadata: dict,
