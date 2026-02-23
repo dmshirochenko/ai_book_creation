@@ -278,3 +278,160 @@ class TestMetadataSanitization:
         assert "evil_key" not in added_obj.extra_metadata
         assert "total_cost" in added_obj.extra_metadata
         assert "prompt" in added_obj.extra_metadata
+
+
+class TestReserveEdgeCases:
+    @pytest.mark.asyncio
+    async def test_exact_balance_consumed(self, service, mock_session):
+        """amount exactly equals total balance, all batches go to 0."""
+        batch_a = MagicMock(); batch_a.id = uuid.uuid4(); batch_a.remaining_amount = Decimal("3.00")
+        batch_b = MagicMock(); batch_b.id = uuid.uuid4(); batch_b.remaining_amount = Decimal("2.00")
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [batch_a, batch_b]
+        mock_session.execute.return_value = mock_result
+        mock_session.add = MagicMock()
+        async def fake_refresh(obj, **kw):
+            obj.id = uuid.uuid4()
+        mock_session.refresh = fake_refresh
+
+        result = await service.reserve(
+            user_id=uuid.uuid4(), amount=Decimal("5.00"),
+            job_id=uuid.uuid4(), job_type="story", description="test", metadata={},
+        )
+        assert result is not None
+        assert batch_a.remaining_amount == Decimal("0")
+        assert batch_b.remaining_amount == Decimal("0")
+
+    @pytest.mark.asyncio
+    async def test_negative_amount_treated_as_noop(self, service, mock_session):
+        """negative amount hits DB, no batches → no batches consumed, log created (0 >= -1)."""
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_session.execute.return_value = mock_result
+        mock_session.add = MagicMock()
+        async def fake_refresh(obj, **kw):
+            obj.id = uuid.uuid4()
+        mock_session.refresh = fake_refresh
+
+        result = await service.reserve(
+            user_id=uuid.uuid4(), amount=Decimal("-1.00"),
+            job_id=uuid.uuid4(), job_type="story", description="test", metadata={},
+        )
+        # Negative amount passes the balance check (0 >= -1) and creates a log
+        assert result is not None
+        added_obj = mock_session.add.call_args[0][0]
+        assert added_obj.extra_metadata["batches_consumed"] == []
+
+
+class TestConfirmEdgeCases:
+    @pytest.mark.asyncio
+    async def test_confirm_refunded_log_is_noop(self, service, mock_session):
+        """log status 'refunded' → no transition."""
+        mock_log = MagicMock(); mock_log.status = "refunded"
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_log
+        mock_session.execute.return_value = mock_result
+        await service.confirm(uuid.uuid4())
+        assert mock_log.status == "refunded"
+        mock_session.commit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_confirm_nonexistent_log_is_noop(self, service, mock_session):
+        """no log found → nothing happens."""
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_session.execute.return_value = mock_result
+        await service.confirm(uuid.uuid4())
+        mock_session.commit.assert_not_called()
+
+
+class TestReleaseEdgeCases:
+    @pytest.mark.asyncio
+    async def test_release_with_missing_batch(self, service, mock_session):
+        """batch deleted after reservation → skip gracefully."""
+        batch_a_id = uuid.uuid4()
+        batch_b_id = uuid.uuid4()
+        mock_log = MagicMock()
+        mock_log.status = "reserved"
+        mock_log.credits_used = Decimal("3.00")
+        mock_log.extra_metadata = {
+            "batches_consumed": [
+                {"batch_id": str(batch_a_id), "amount": 2.0},
+                {"batch_id": str(batch_b_id), "amount": 1.0},
+            ]
+        }
+        # batch_a exists, batch_b is missing (returns None)
+        batch_a = MagicMock(); batch_a.remaining_amount = Decimal("0")
+        mock_result_log = MagicMock(); mock_result_log.scalar_one_or_none.return_value = mock_log
+        mock_result_a = MagicMock(); mock_result_a.scalar_one_or_none.return_value = batch_a
+        mock_result_b = MagicMock(); mock_result_b.scalar_one_or_none.return_value = None
+        mock_session.execute.side_effect = [mock_result_log, mock_result_a, mock_result_b]
+
+        await service.release(uuid.uuid4())
+        assert mock_log.status == "refunded"
+        assert batch_a.remaining_amount == Decimal("2.00")
+        mock_session.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_release_with_empty_batches_consumed(self, service, mock_session):
+        """empty batches_consumed list → marks refunded."""
+        mock_log = MagicMock()
+        mock_log.status = "reserved"
+        mock_log.credits_used = Decimal("0")
+        mock_log.extra_metadata = {"batches_consumed": []}
+        mock_result_log = MagicMock(); mock_result_log.scalar_one_or_none.return_value = mock_log
+        mock_session.execute.return_value = mock_result_log
+
+        await service.release(uuid.uuid4())
+        assert mock_log.status == "refunded"
+        mock_session.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_release_with_no_metadata(self, service, mock_session):
+        """extra_metadata is None → marks refunded."""
+        mock_log = MagicMock()
+        mock_log.status = "reserved"
+        mock_log.credits_used = Decimal("1.00")
+        mock_log.extra_metadata = None
+        mock_result_log = MagicMock(); mock_result_log.scalar_one_or_none.return_value = mock_log
+        mock_session.execute.return_value = mock_result_log
+
+        await service.release(uuid.uuid4())
+        assert mock_log.status == "refunded"
+        mock_session.commit.assert_called_once()
+
+
+class TestCleanupStaleReservations:
+    @pytest.mark.asyncio
+    async def test_refunds_stale_logs(self, service, mock_session):
+        """finds 2 stale logs, calls release for each, returns count=2."""
+        log1 = MagicMock(); log1.id = uuid.uuid4(); log1.status = "reserved"
+        log1.credits_used = Decimal("1.00"); log1.extra_metadata = {"batches_consumed": []}
+        log2 = MagicMock(); log2.id = uuid.uuid4(); log2.status = "reserved"
+        log2.credits_used = Decimal("2.00"); log2.extra_metadata = {"batches_consumed": []}
+
+        # First call: cleanup_stale_reservations fetches stale logs
+        mock_result_stale = MagicMock()
+        mock_result_stale.scalars.return_value.all.return_value = [log1, log2]
+        # release(log1.id): fetch log → returns log1
+        mock_result_log1 = MagicMock(); mock_result_log1.scalar_one_or_none.return_value = log1
+        # release(log2.id): fetch log → returns log2
+        mock_result_log2 = MagicMock(); mock_result_log2.scalar_one_or_none.return_value = log2
+
+        mock_session.execute.side_effect = [mock_result_stale, mock_result_log1, mock_result_log2]
+
+        count = await service.cleanup_stale_reservations(ttl_minutes=30)
+        assert count == 2
+        assert log1.status == "refunded"
+        assert log2.status == "refunded"
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_none_stale(self, service, mock_session):
+        """no stale logs → returns 0."""
+        mock_result_stale = MagicMock()
+        mock_result_stale.scalars.return_value.all.return_value = []
+        mock_session.execute.return_value = mock_result_stale
+
+        count = await service.cleanup_stale_reservations(ttl_minutes=30)
+        assert count == 0
+        mock_session.commit.assert_not_called()
