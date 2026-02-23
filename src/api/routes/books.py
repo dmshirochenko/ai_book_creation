@@ -5,7 +5,7 @@ Book generation endpoints.
 import uuid
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from starlette.requests import Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,8 +69,8 @@ async def generate_book(
     job_id = uuid.uuid4()
 
     # Calculate page count for cost estimation
-    if body.story_structured and body.story_structured.get("pages"):
-        page_count = len(body.story_structured["pages"])
+    if body.story_structured and body.story_structured.pages:
+        page_count = len(body.story_structured.pages)
     else:
         from src.core.text_processor import TextProcessor
         processor = TextProcessor(max_sentences_per_page=2, max_chars_per_page=100)
@@ -261,8 +261,8 @@ async def batch_image_status(
 async def list_generated_books(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> GeneratedBookListResponse:
     """
     List completed books with download links for the authenticated user.
@@ -369,8 +369,8 @@ async def download_book(
 async def list_books(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> BookListResponse:
     """
     List all book generation jobs for the authenticated user.

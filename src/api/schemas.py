@@ -8,11 +8,22 @@ from pydantic import BaseModel, Field
 from src.core.config import DEFAULT_IMAGE_MODEL
 
 
+class StoryPageItem(BaseModel):
+    """A single page in a structured story input."""
+    text: str = Field(..., max_length=5000, description="Text content for this page")
+
+
+class StoryStructuredInput(BaseModel):
+    """Validated structure for story_structured field."""
+    title: Optional[str] = Field(None, max_length=200, description="Story title")
+    pages: List[StoryPageItem] = Field(..., min_length=1, max_length=50, description="Story pages")
+
+
 class BookGenerateRequest(BaseModel):
     """Request schema for book generation."""
-    
-    story: str = Field(..., description="Story text to convert into a book")
-    story_structured: Optional[dict] = Field(None, description="Structured story JSON from story generation: {title, pages: [{text}]}")
+
+    story: str = Field(..., max_length=50000, description="Story text to convert into a book")
+    story_structured: Optional[StoryStructuredInput] = Field(None, description="Structured story JSON from story generation: {title, pages: [{text}]}")
     title: Optional[str] = Field(None, description="Book title (extracted from story if not provided)")
     author: str = Field("TaleHop Stories", description="Author name for the cover")
     age_min: int = Field(2, ge=1, le=10, description="Minimum target age")
