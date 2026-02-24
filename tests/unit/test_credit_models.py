@@ -28,7 +28,18 @@ class TestUserCreditsModel:
             source="signup_bonus",
         )
         assert uc.source == "signup_bonus"
-        assert uc.stripe_session_id is None
+        assert uc.credit_transaction_id is None
+
+    def test_purchase_with_transaction_id(self):
+        tx_id = uuid.uuid4()
+        uc = UserCredits(
+            user_id=uuid.uuid4(),
+            original_amount=Decimal("10.00"),
+            remaining_amount=Decimal("10.00"),
+            source="purchase",
+            credit_transaction_id=tx_id,
+        )
+        assert uc.credit_transaction_id == tx_id
 
     def test_column_defaults(self):
         """Verify that column-level defaults are configured correctly."""

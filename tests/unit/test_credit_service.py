@@ -214,14 +214,14 @@ class TestRelease:
         mock_result_b = MagicMock(); mock_result_b.scalar_one_or_none.return_value = batch_b
         mock_session.execute.side_effect = [mock_result_log, mock_result_a, mock_result_b]
         await service.release(uuid.uuid4())
-        assert mock_log.status == "refunded"
+        assert mock_log.status == "released"
         assert batch_a.remaining_amount == Decimal("2.00")
         assert batch_b.remaining_amount == Decimal("5.00")
         mock_session.commit.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_release_already_refunded_is_noop(self, service, mock_session):
-        mock_log = MagicMock(); mock_log.status = "refunded"
+        mock_log = MagicMock(); mock_log.status = "released"
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_log
         mock_session.execute.return_value = mock_result
@@ -327,12 +327,12 @@ class TestConfirmEdgeCases:
     @pytest.mark.asyncio
     async def test_confirm_refunded_log_is_noop(self, service, mock_session):
         """log status 'refunded' → no transition."""
-        mock_log = MagicMock(); mock_log.status = "refunded"
+        mock_log = MagicMock(); mock_log.status = "released"
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_log
         mock_session.execute.return_value = mock_result
         await service.confirm(uuid.uuid4())
-        assert mock_log.status == "refunded"
+        assert mock_log.status == "released"
         mock_session.commit.assert_not_called()
 
     @pytest.mark.asyncio
@@ -368,7 +368,7 @@ class TestReleaseEdgeCases:
         mock_session.execute.side_effect = [mock_result_log, mock_result_a, mock_result_b]
 
         await service.release(uuid.uuid4())
-        assert mock_log.status == "refunded"
+        assert mock_log.status == "released"
         assert batch_a.remaining_amount == Decimal("2.00")
         mock_session.commit.assert_called_once()
 
@@ -383,7 +383,7 @@ class TestReleaseEdgeCases:
         mock_session.execute.return_value = mock_result_log
 
         await service.release(uuid.uuid4())
-        assert mock_log.status == "refunded"
+        assert mock_log.status == "released"
         mock_session.commit.assert_called_once()
 
     @pytest.mark.asyncio
@@ -397,7 +397,7 @@ class TestReleaseEdgeCases:
         mock_session.execute.return_value = mock_result_log
 
         await service.release(uuid.uuid4())
-        assert mock_log.status == "refunded"
+        assert mock_log.status == "released"
         mock_session.commit.assert_called_once()
 
 
@@ -422,8 +422,8 @@ class TestCleanupStaleReservations:
 
         count = await service.cleanup_stale_reservations(ttl_minutes=30)
         assert count == 2
-        assert log1.status == "refunded"
-        assert log2.status == "refunded"
+        assert log1.status == "released"
+        assert log2.status == "released"
 
     @pytest.mark.asyncio
     async def test_returns_zero_when_none_stale(self, service, mock_session):
