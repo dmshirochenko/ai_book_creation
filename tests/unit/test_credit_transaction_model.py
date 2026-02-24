@@ -33,6 +33,11 @@ class TestCreditTransactionModel:
         assert tx.transaction_type == "refund"
         assert tx.extra_metadata["reason"] == "requested_by_customer"
 
+    def test_default_status_is_completed(self):
+        table = CreditTransaction.__table__
+        status_col = table.c.status
+        assert status_col.default.arg == "completed"
+
     def test_table_structure(self):
         table = CreditTransaction.__table__
         index_names = {idx.name for idx in table.indexes}

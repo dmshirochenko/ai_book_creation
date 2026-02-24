@@ -169,7 +169,7 @@ class CreditService:
             if batch:
                 batch.remaining_amount += Decimal(str(entry["amount"]))
 
-        log.status = "refunded"
+        log.status = "released"
         await self._session.commit()
         logger.info(f"Released {log.credits_used} credits for usage {usage_log_id}")
 

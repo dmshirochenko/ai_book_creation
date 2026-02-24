@@ -335,7 +335,7 @@ class CreditUsageLog(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('reserved', 'confirmed', 'refunded')",
+            "status IN ('reserved', 'confirmed', 'released')",
             name="ck_credit_usage_logs_status",
         ),
         CheckConstraint(
@@ -360,6 +360,9 @@ class CreditTransaction(Base):
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     transaction_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="completed"
+    )
     stripe_session_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     stripe_event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     extra_metadata: Mapped[dict | None] = mapped_column(
@@ -376,6 +379,10 @@ class CreditTransaction(Base):
         CheckConstraint(
             "transaction_type IN ('purchase', 'refund')",
             name="ck_credit_transactions_type",
+        ),
+        CheckConstraint(
+            "status IN ('completed', 'refunded')",
+            name="ck_credit_transactions_status",
         ),
         Index("idx_credit_transactions_user_id", "user_id"),
         Index(
