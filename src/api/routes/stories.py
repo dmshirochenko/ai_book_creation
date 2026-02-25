@@ -106,6 +106,7 @@ async def create_story(
             status_code=402,
             detail={
                 "message": "Insufficient credits",
+                "balance": float(e.balance),
                 "required": float(e.required),
             },
         )

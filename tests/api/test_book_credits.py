@@ -205,7 +205,7 @@ class TestBookCredits:
 
             assert resp.status_code == 402
             detail = resp.json()["detail"]
-            assert detail == {"message": "Insufficient credits", "required": 16.0}
+            assert detail == {"message": "Insufficient credits", "balance": 5.0, "required": 16.0}
 
     async def test_structured_pages_count_used(self, client):
         """When story_structured with 8 pages is provided, calculate_book_cost receives pages=8."""

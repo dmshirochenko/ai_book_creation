@@ -154,7 +154,7 @@ class TestStoryCredits:
             resp = await client.post("/api/v1/stories/create", json=_VALID_BODY)
             assert resp.status_code == 402
             detail = resp.json()["detail"]
-            assert detail == {"message": "Insufficient credits", "required": 1.0}
+            assert detail == {"message": "Insufficient credits", "balance": 0.5, "required": 1.0}
 
     async def test_create_story_passes_usage_log_id_to_task(self, client):
         """The usage_log_id returned by reserve() is forwarded to the background task."""

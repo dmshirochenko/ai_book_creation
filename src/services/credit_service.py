@@ -94,7 +94,7 @@ class CreditService:
         self, user_id: uuid.UUID, amount: Decimal, job_id: uuid.UUID,
         job_type: str, description: str, metadata: dict,
     ) -> Optional[uuid.UUID]:
-        if amount == 0 or amount == Decimal("0"):
+        if amount <= 0:
             return None
 
         result = await self._session.execute(
