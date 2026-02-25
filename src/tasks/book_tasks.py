@@ -235,11 +235,9 @@ async def _generate_book_inner(
         booklet_r2_key = f"pdfs/{job_id}/{booklet_filename}"
         review_r2_key = f"pdfs/{job_id}/{review_filename}"
 
-        booklet_size = await storage.upload_file(
-            booklet_path, booklet_r2_key, "application/pdf"
-        )
-        review_size = await storage.upload_file(
-            review_path, review_r2_key, "application/pdf"
+        booklet_size, review_size = await asyncio.gather(
+            storage.upload_file(booklet_path, booklet_r2_key, "application/pdf"),
+            storage.upload_file(review_path, review_r2_key, "application/pdf"),
         )
         logger.info(f"[{job_id}] PDFs uploaded to R2")
 
@@ -500,11 +498,9 @@ async def _regenerate_book_inner(
         booklet_r2_key = f"pdfs/{job_id}/{booklet_filename}"
         review_r2_key = f"pdfs/{job_id}/{review_filename}"
 
-        booklet_size = await storage.upload_file(
-            booklet_path, booklet_r2_key, "application/pdf"
-        )
-        review_size = await storage.upload_file(
-            review_path, review_r2_key, "application/pdf"
+        booklet_size, review_size = await asyncio.gather(
+            storage.upload_file(booklet_path, booklet_r2_key, "application/pdf"),
+            storage.upload_file(review_path, review_r2_key, "application/pdf"),
         )
 
     await repo.create_generated_pdf(

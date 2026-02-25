@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import io
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict, TYPE_CHECKING
 from dataclasses import dataclass
@@ -70,24 +71,56 @@ def get_font_manager() -> "FontManager":
 
 class FontManager:
     """Manage font registration and Unicode support."""
-    
-    # Common system font paths for different OS
+
+    # Known exact paths for common fonts (checked first, O(1) per path)
+    KNOWN_FONT_PATHS: Dict[str, List[str]] = {
+        "DejaVuSans.ttf": [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Debian/Ubuntu
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",              # Arch
+            "/Library/Fonts/DejaVuSans.ttf",                     # macOS (if installed)
+        ],
+        "DejaVuSans-Bold.ttf": [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+            "/Library/Fonts/DejaVuSans-Bold.ttf",
+        ],
+        "NotoSans-Regular.ttf": [
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+            "/Library/Fonts/NotoSans-Regular.ttf",
+        ],
+        "NotoSans-Bold.ttf": [
+            "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+            "/usr/share/fonts/noto/NotoSans-Bold.ttf",
+            "/Library/Fonts/NotoSans-Bold.ttf",
+        ],
+        "FreeSans.ttf": [
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+            "/usr/share/fonts/TTF/FreeSans.ttf",
+        ],
+        "Arial.ttf": [
+            "/Library/Fonts/Arial.ttf",                          # macOS
+            "C:/Windows/Fonts/Arial.ttf",                        # Windows
+        ],
+        "Arial Unicode.ttf": [
+            "/Library/Fonts/Arial Unicode.ttf",
+            "C:/Windows/Fonts/ARIALUNI.TTF",
+        ],
+    }
+
+    # Fallback search paths (only used if known paths miss)
     FONT_SEARCH_PATHS = [
-        # macOS
         "/System/Library/Fonts",
         "/Library/Fonts",
         "~/Library/Fonts",
-        # Linux
         "/usr/share/fonts/truetype",
         "/usr/share/fonts/TTF",
         "/usr/local/share/fonts",
         "~/.fonts",
-        # Windows
         "C:/Windows/Fonts",
-        # Project local
         "./fonts",
     ]
-    
+
     # Preferred fonts with good Unicode support
     UNICODE_FONTS = [
         ("DejaVuSans", "DejaVuSans.ttf"),
@@ -98,11 +131,11 @@ class FontManager:
         ("Arial", "Arial.ttf"),
         ("ArialUnicode", "Arial Unicode.ttf"),
     ]
-    
+
     def __init__(self):
         self.registered_fonts = {}
         self._register_system_fonts()
-    
+
     def _register_system_fonts(self):
         """Find and register Unicode-compatible fonts."""
         for font_name, font_file in self.UNICODE_FONTS:
@@ -120,9 +153,20 @@ class FontManager:
                 "(Cyrillic/CJK characters will not render). "
                 "Install fonts-dejavu-core or place .ttf files in ./fonts/"
             )
-    
+
     def _find_font(self, font_file: str) -> Optional[str]:
-        """Search for a font file in common locations."""
+        """Search for a font file, trying known exact paths first."""
+        # Fast path: check known locations (O(1) file existence checks)
+        for path in self.KNOWN_FONT_PATHS.get(font_file, []):
+            if os.path.isfile(path):
+                return path
+
+        # Also check project-local fonts dir without walking
+        local_path = os.path.join("./fonts", font_file)
+        if os.path.isfile(local_path):
+            return local_path
+
+        # Slow fallback: walk search directories
         for search_path in self.FONT_SEARCH_PATHS:
             expanded_path = os.path.expanduser(search_path)
             if os.path.isdir(expanded_path):
@@ -878,23 +922,30 @@ def generate_both_pdfs(
         from src.api.schemas import BookGenerateRequest as _BGReq
         config = _BGReq(story="")
 
-    # Create shared resources to avoid redundant initialization
+    # Shared read-only resources (thread-safe)
     font_manager = get_font_manager()
     image_cache = ImageCache(images) if images else None
-    text_cache = TextWrapCache()
 
-    booklet = generate_booklet_pdf(
-        content, booklet_path, config,
-        image_cache=image_cache,
-        text_cache=text_cache,
-        font_manager=font_manager,
-    )
-    review = generate_sequential_pdf(
-        content, review_path, config,
-        image_cache=image_cache,
-        text_cache=text_cache,
-        font_manager=font_manager,
-    )
+    # Each generator gets its own TextWrapCache (different page widths
+    # produce different cache keys, so sharing has minimal benefit and
+    # separate caches avoid concurrent dict writes).
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        booklet_future = pool.submit(
+            generate_booklet_pdf,
+            content, booklet_path, config,
+            image_cache=image_cache,
+            text_cache=TextWrapCache(),
+            font_manager=font_manager,
+        )
+        review_future = pool.submit(
+            generate_sequential_pdf,
+            content, review_path, config,
+            image_cache=image_cache,
+            text_cache=TextWrapCache(),
+            font_manager=font_manager,
+        )
+        booklet = booklet_future.result()
+        review = review_future.result()
 
     return booklet, review
 
