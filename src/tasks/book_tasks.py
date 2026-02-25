@@ -223,15 +223,13 @@ async def _generate_book_inner(
         booklet_path = str(Path(tmp_dir) / booklet_filename)
         review_path = str(Path(tmp_dir) / review_filename)
 
-        await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: generate_both_pdfs(
-                content=book_content,
-                booklet_path=booklet_path,
-                review_path=review_path,
-                config=request,
-                images=images,
-            ),
+        await asyncio.to_thread(
+            generate_both_pdfs,
+            content=book_content,
+            booklet_path=booklet_path,
+            review_path=review_path,
+            config=request,
+            images=images,
         )
         # Upload to R2
         booklet_r2_key = f"pdfs/{job_id}/{booklet_filename}"
@@ -490,15 +488,13 @@ async def _regenerate_book_inner(
         booklet_path = str(Path(tmp_dir) / booklet_filename)
         review_path = str(Path(tmp_dir) / review_filename)
 
-        await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: generate_both_pdfs(
-                content=book_content,
-                booklet_path=booklet_path,
-                review_path=review_path,
-                config=request,
-                images=images,
-            ),
+        await asyncio.to_thread(
+            generate_both_pdfs,
+            content=book_content,
+            booklet_path=booklet_path,
+            review_path=review_path,
+            config=request,
+            images=images,
         )
 
         booklet_r2_key = f"pdfs/{job_id}/{booklet_filename}"

@@ -4,8 +4,10 @@ Async Cloudflare R2 storage client (S3-compatible).
 Uses aioboto3 for non-blocking uploads/downloads inside asyncio.gather().
 """
 
+import asyncio
 import os
 import logging
+from pathlib import Path
 from typing import Optional
 
 import aioboto3
@@ -60,8 +62,7 @@ class R2Storage:
         self, file_path: str, key: str, content_type: str = "application/octet-stream"
     ) -> int:
         """Read a local file and upload to R2. Returns file size in bytes."""
-        with open(file_path, "rb") as f:
-            data = f.read()
+        data = await asyncio.to_thread(Path(file_path).read_bytes)
         await self.upload_bytes(data, key, content_type)
         return len(data)
 
