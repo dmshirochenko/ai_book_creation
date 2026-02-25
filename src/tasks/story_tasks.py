@@ -138,8 +138,14 @@ async def create_story_task(
                     )
                     # Release reserved credits with fresh session
                     if usage_log_id:
-                        credit_service = CreditService(err_session)
-                        await credit_service.release(usage_log_id, user_id)
-                        logger.info(f"[{job_id}] Credits released after failure")
+                        try:
+                            credit_service = CreditService(err_session)
+                            await credit_service.release(usage_log_id, user_id)
+                            logger.info(f"[{job_id}] Credits released after failure")
+                        except Exception as release_err:
+                            logger.error(
+                                f"[{job_id}] Failed to release credits: usage_log={usage_log_id}, user={user_id}, error={release_err}",
+                                exc_info=True,
+                            )
             except Exception as err_exc:
                 logger.error(f"[{job_id}] Could not record failure: {err_exc}", exc_info=True)
