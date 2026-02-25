@@ -17,6 +17,8 @@ from typing import List, Tuple, Optional, Dict, TYPE_CHECKING
 from dataclasses import dataclass
 import hashlib
 
+import logging
+
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
@@ -26,6 +28,8 @@ from reportlab.lib.colors import black, white, HexColor
 from reportlab.lib.utils import ImageReader
 
 from src.core.text_processor import BookContent, BookPage, PageType
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from src.api.schemas import BookGenerateRequest
@@ -107,8 +111,15 @@ class FontManager:
                 try:
                     pdfmetrics.registerFont(TTFont(font_name, font_path))
                     self.registered_fonts[font_name] = font_path
-                except Exception:
-                    pass  # Skip fonts that fail to register
+                    logger.info("Registered font %s from %s", font_name, font_path)
+                except Exception as e:
+                    logger.warning("Failed to register font %s from %s: %s", font_name, font_path, e)
+        if not self.registered_fonts:
+            logger.warning(
+                "No Unicode fonts found. PDF text will use Helvetica "
+                "(Cyrillic/CJK characters will not render). "
+                "Install fonts-dejavu-core or place .ttf files in ./fonts/"
+            )
     
     def _find_font(self, font_file: str) -> Optional[str]:
         """Search for a font file in common locations."""
@@ -130,9 +141,11 @@ class FontManager:
 
         # Try other registered fonts
         for font_name in self.registered_fonts:
+            logger.info("Preferred font %s not found, using %s", preferred, font_name)
             return font_name
 
         # Fall back to Helvetica (always available)
+        logger.warning("Falling back to Helvetica — Cyrillic/CJK text will not render correctly")
         return "Helvetica"
 
 
