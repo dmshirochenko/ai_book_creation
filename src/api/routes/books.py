@@ -70,7 +70,7 @@ async def generate_book(
 
     # Calculate page count for cost estimation
     if body.story_structured and body.story_structured.pages:
-        page_count = len(body.story_structured.pages)
+        page_count = len(body.story_structured.pages) + 2  # +cover +end pages
     else:
         from src.core.text_processor import TextProcessor
         processor = TextProcessor(max_sentences_per_page=2, max_chars_per_page=100)
