@@ -117,7 +117,7 @@ class CreditService:
             consume = min(batch.remaining_amount, remaining_to_consume)
             batch.remaining_amount -= consume
             remaining_to_consume -= consume
-            batches_consumed.append({"batch_id": str(batch.id), "amount": float(consume)})
+            batches_consumed.append({"batch_id": str(batch.id), "amount": str(consume)})
 
         # Sanitize metadata keys
         safe_metadata = {k: v for k, v in metadata.items() if k in self.ALLOWED_METADATA_KEYS}
@@ -167,7 +167,7 @@ class CreditService:
             )
             batch = batch_result.scalar_one_or_none()
             if batch:
-                batch.remaining_amount += Decimal(str(entry["amount"]))
+                batch.remaining_amount += Decimal(entry["amount"])
 
         log.status = "released"
         await self._session.commit()
