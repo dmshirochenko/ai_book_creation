@@ -304,23 +304,13 @@ class TestReserveEdgeCases:
 
     @pytest.mark.asyncio
     async def test_negative_amount_treated_as_noop(self, service, mock_session):
-        """negative amount hits DB, no batches → no batches consumed, log created (0 >= -1)."""
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = []
-        mock_session.execute.return_value = mock_result
-        mock_session.add = MagicMock()
-        async def fake_refresh(obj, **kw):
-            obj.id = uuid.uuid4()
-        mock_session.refresh = fake_refresh
-
+        """Negative amount returns None immediately without touching the DB."""
         result = await service.reserve(
             user_id=uuid.uuid4(), amount=Decimal("-1.00"),
             job_id=uuid.uuid4(), job_type="story", description="test", metadata={},
         )
-        # Negative amount passes the balance check (0 >= -1) and creates a log
-        assert result is not None
-        added_obj = mock_session.add.call_args[0][0]
-        assert added_obj.extra_metadata["batches_consumed"] == []
+        assert result is None
+        mock_session.execute.assert_not_called()
 
 
 class TestConfirmEdgeCases:

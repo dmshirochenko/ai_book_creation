@@ -111,6 +111,7 @@ async def generate_book(
             status_code=402,
             detail={
                 "message": "Insufficient credits",
+                "balance": float(e.balance),
                 "required": float(e.required),
             },
         )
