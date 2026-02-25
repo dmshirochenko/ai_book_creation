@@ -110,11 +110,15 @@ async def create_story(
             },
         )
 
-    # Create job in database
-    await repo.create_story_job(
-        db, job_id=job_id, user_id=user_id,
-        request_params=body.model_dump(),
-    )
+    # Create job in database — release reserved credits if this fails
+    try:
+        await repo.create_story_job(
+            db, job_id=job_id, user_id=user_id,
+            request_params=body.model_dump(),
+        )
+    except Exception:
+        await credit_service.release(usage_log_id, user_id)
+        raise
 
     # Start background task
     background_tasks.add_task(create_story_task, str(job_id), body, user_id, usage_log_id)

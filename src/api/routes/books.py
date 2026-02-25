@@ -115,11 +115,15 @@ async def generate_book(
             },
         )
 
-    # Create job in database
-    await repo.create_book_job(
-        db, job_id=job_id, user_id=user_id,
-        request_params=body.model_dump(),
-    )
+    # Create job in database — release reserved credits if this fails
+    try:
+        await repo.create_book_job(
+            db, job_id=job_id, user_id=user_id,
+            request_params=body.model_dump(),
+        )
+    except Exception:
+        await credit_service.release(usage_log_id, user_id)
+        raise
 
     # Start background task
     background_tasks.add_task(generate_book_task, str(job_id), body, user_id, usage_log_id)
