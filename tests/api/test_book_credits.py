@@ -81,14 +81,14 @@ class TestBookCredits:
     """Tests for credit reserve/deduction in POST /api/v1/books/generate."""
 
     async def test_generate_book_reserves_credits(self, client):
-        """reserve() is called with amount=16.00 and job_type='book' for an 8-page structured story with images."""
+        """reserve() is called with amount=20.00 and job_type='book' for an 8-page structured story with images."""
         usage_log_id = uuid.uuid4()
 
         with (
             patch(
                 "src.api.routes.books.CreditService.calculate_book_cost",
                 new_callable=AsyncMock,
-                return_value=Decimal("16.00"),
+                return_value=Decimal("20.00"),
             ),
             patch(
                 "src.api.routes.books.CreditService.get_pricing",
@@ -110,11 +110,11 @@ class TestBookCredits:
             assert resp.status_code == 200
             mock_reserve.assert_called_once()
             call_kwargs = mock_reserve.call_args.kwargs
-            assert call_kwargs["amount"] == Decimal("16.00")
+            assert call_kwargs["amount"] == Decimal("20.00")
             assert call_kwargs["job_type"] == "book"
 
     async def test_generate_book_cost_with_images(self, client):
-        """calculate_book_cost is called with pages=8, with_images=True when generate_images=True."""
+        """calculate_book_cost is called with pages=10, with_images=True when generate_images=True."""
         usage_log_id = uuid.uuid4()
 
         with (
@@ -143,11 +143,11 @@ class TestBookCredits:
             assert resp.status_code == 200
             mock_calc.assert_called_once()
             call_kwargs = mock_calc.call_args.kwargs
-            assert call_kwargs["pages"] == 8
+            assert call_kwargs["pages"] == 10
             assert call_kwargs["with_images"] is True
 
     async def test_generate_book_cost_without_images(self, client):
-        """calculate_book_cost is called with pages=8, with_images=False when generate_images=False."""
+        """calculate_book_cost is called with pages=10, with_images=False when generate_images=False."""
         usage_log_id = uuid.uuid4()
         body = {**_VALID_BOOK_BODY, "generate_images": False}
 
@@ -177,7 +177,7 @@ class TestBookCredits:
             assert resp.status_code == 200
             mock_calc.assert_called_once()
             call_kwargs = mock_calc.call_args.kwargs
-            assert call_kwargs["pages"] == 8
+            assert call_kwargs["pages"] == 10
             assert call_kwargs["with_images"] is False
 
     async def test_generate_book_returns_402_insufficient(self, client):
@@ -186,7 +186,7 @@ class TestBookCredits:
             patch(
                 "src.api.routes.books.CreditService.calculate_book_cost",
                 new_callable=AsyncMock,
-                return_value=Decimal("16.00"),
+                return_value=Decimal("20.00"),
             ),
             patch(
                 "src.api.routes.books.CreditService.get_pricing",
@@ -197,7 +197,7 @@ class TestBookCredits:
                 "src.api.routes.books.CreditService.reserve",
                 new_callable=AsyncMock,
                 side_effect=InsufficientCreditsError(
-                    balance=Decimal("5.00"), required=Decimal("16.00"),
+                    balance=Decimal("5.00"), required=Decimal("20.00"),
                 ),
             ),
         ):
@@ -205,10 +205,10 @@ class TestBookCredits:
 
             assert resp.status_code == 402
             detail = resp.json()["detail"]
-            assert detail == {"message": "Insufficient credits", "balance": 5.0, "required": 16.0}
+            assert detail == {"message": "Insufficient credits", "balance": 5.0, "required": 20.0}
 
     async def test_structured_pages_count_used(self, client):
-        """When story_structured with 8 pages is provided, calculate_book_cost receives pages=8."""
+        """When story_structured with 8 pages is provided, calculate_book_cost receives pages=10."""
         usage_log_id = uuid.uuid4()
 
         with (
@@ -236,7 +236,7 @@ class TestBookCredits:
 
             assert resp.status_code == 200
             call_kwargs = mock_calc.call_args.kwargs
-            assert call_kwargs["pages"] == 8
+            assert call_kwargs["pages"] == 10
 
     async def test_raw_text_uses_text_processor_page_count(self, client):
         """When story_structured is absent, TextProcessor determines the page count (> 0)."""
@@ -283,7 +283,7 @@ class TestBookCredits:
             patch(
                 "src.api.routes.books.CreditService.calculate_book_cost",
                 new_callable=AsyncMock,
-                return_value=Decimal("16.00"),
+                return_value=Decimal("20.00"),
             ),
             patch(
                 "src.api.routes.books.CreditService.get_pricing",
