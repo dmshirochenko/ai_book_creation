@@ -3,7 +3,7 @@ Pydantic schemas for API request/response models.
 """
 
 from typing import Optional, Literal, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from src.core.config import DEFAULT_IMAGE_MODEL
 
@@ -19,6 +19,20 @@ class StoryStructuredInput(BaseModel):
     pages: List[StoryPageItem] = Field(..., min_length=1, max_length=50, description="Story pages")
 
 
+END_TEXT_BY_LANGUAGE = {
+    "english": "The End",
+    "russian": "Конец",
+    "spanish": "Fin",
+    "french": "Fin",
+    "german": "Ende",
+    "italian": "Fine",
+    "portuguese": "Fim",
+    "chinese": "终",
+    "japanese": "おしまい",
+    "korean": "끝",
+}
+
+
 class BookGenerateRequest(BaseModel):
     """Request schema for book generation."""
 
@@ -31,7 +45,7 @@ class BookGenerateRequest(BaseModel):
     language: str = Field("English", description="Target language for the book")
     font_size: int = Field(24, ge=12, le=48, description="Content font size in points")
     title_font_size: int = Field(36, ge=18, le=72, description="Title font size in points")
-    end_text: str = Field("The End", description="Text for the final page")
+    end_text: Optional[str] = Field(None, description="Text for the final page (auto-localized from language if not set)")
     generate_images: bool = Field(False, description="Generate AI illustrations for each page")
     image_model: str = Field(
         DEFAULT_IMAGE_MODEL,
@@ -48,6 +62,13 @@ class BookGenerateRequest(BaseModel):
     margin_top: int = Field(50, ge=10, le=150, description="Top margin in points (72 points = 1 inch)")
     margin_left: int = Field(40, ge=10, le=150, description="Left margin in points")
     margin_right: int = Field(40, ge=10, le=150, description="Right margin in points")
+
+    @model_validator(mode="after")
+    def set_end_text_from_language(self):
+        if self.end_text is None:
+            lang_key = self.language.lower().strip()
+            self.end_text = END_TEXT_BY_LANGUAGE.get(lang_key, "The End")
+        return self
 
     model_config = {
         "json_schema_extra": {
