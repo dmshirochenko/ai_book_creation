@@ -128,17 +128,14 @@ class TestOpenRouterImageGenerator:
         mock_response.json.return_value = response_data
         mock_response.raise_for_status = MagicMock()
 
-        with patch("src.core.image_generator.httpx.AsyncClient") as mock_cls:
-            mock_instance = AsyncMock()
-            mock_instance.post.return_value = mock_response
-            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-            mock_instance.__aexit__ = AsyncMock(return_value=False)
-            mock_cls.return_value = mock_instance
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        gen._client = mock_client
 
-            result = await gen.generate("test prompt")
-            assert result.success is True
-            assert result.image_data is not None
-            assert len(result.image_data) > 0
+        result = await gen.generate("test prompt")
+        assert result.success is True
+        assert result.image_data is not None
+        assert len(result.image_data) > 0
 
     async def test_no_image_in_response(self):
         config = ImageConfig(api_key="test-key")
@@ -149,15 +146,12 @@ class TestOpenRouterImageGenerator:
         mock_response.json.return_value = response_data
         mock_response.raise_for_status = MagicMock()
 
-        with patch("src.core.image_generator.httpx.AsyncClient") as mock_cls:
-            mock_instance = AsyncMock()
-            mock_instance.post.return_value = mock_response
-            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-            mock_instance.__aexit__ = AsyncMock(return_value=False)
-            mock_cls.return_value = mock_instance
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        gen._client = mock_client
 
-            result = await gen.generate("test prompt")
-            assert result.success is False
+        result = await gen.generate("test prompt")
+        assert result.success is False
 
     async def test_http_error(self):
         config = ImageConfig(api_key="test-key")
@@ -170,16 +164,13 @@ class TestOpenRouterImageGenerator:
             "error", request=MagicMock(), response=mock_response
         )
 
-        with patch("src.core.image_generator.httpx.AsyncClient") as mock_cls:
-            mock_instance = AsyncMock()
-            mock_instance.post.return_value = mock_response
-            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-            mock_instance.__aexit__ = AsyncMock(return_value=False)
-            mock_cls.return_value = mock_instance
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        gen._client = mock_client
 
-            result = await gen.generate("test prompt")
-            assert result.success is False
-            assert "API error" in result.error
+        result = await gen.generate("test prompt")
+        assert result.success is False
+        assert "API error" in result.error
 
 
 # =============================================================================
@@ -199,7 +190,7 @@ class TestBookImageGenerator:
         assert h1 != h2
 
     async def test_check_cache_hit(self):
-        """Cache hit: cache_check_fn returns a row, storage downloads and re-uploads."""
+        """Cache hit: cache_check_fn returns a row, storage downloads and reuses existing key."""
         config = ImageConfig(api_key="test", use_cache=True)
 
         mock_storage = AsyncMock()
@@ -223,7 +214,8 @@ class TestBookImageGenerator:
         assert result.success is True
         assert result.cached is True
         assert result.image_data == MINIMAL_PNG
-        mock_storage.upload_bytes.assert_called_once()
+        assert result.image_path == "images/old-job/page_1.png"
+        mock_storage.upload_bytes.assert_not_called()
 
     async def test_check_cache_miss(self):
         """Cache miss: cache_check_fn returns None."""

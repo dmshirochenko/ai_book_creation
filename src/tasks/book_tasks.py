@@ -180,6 +180,9 @@ async def _generate_book_inner(
                 ).hexdigest()
                 file_size = len(result.image_data) if result.image_data else None
 
+                # NOTE: For cache hits, r2_key may reference another book's
+                # R2 namespace (e.g. "images/other-job-id/page_1.png").
+                # Any future R2 cleanup must check for shared references.
                 await repo.create_generated_image(
                     session,
                     book_job_id=uuid.UUID(job_id),
@@ -389,39 +392,42 @@ async def _regenerate_book_inner(
         return result
 
     # Retry each failed image
-    for img in failed_images:
-        image_id = img.id
-        prompt = img.prompt
-        page_number = img.page_number
-        retry_attempt = img.retry_attempt + 1
+    try:
+        for img in failed_images:
+            image_id = img.id
+            prompt = img.prompt
+            page_number = img.page_number
+            retry_attempt = img.retry_attempt + 1
 
-        logger.info(f"[{job_id}] Retrying page {page_number} (attempt #{retry_attempt})")
+            logger.info(f"[{job_id}] Retrying page {page_number} (attempt #{retry_attempt})")
 
-        await repo.reset_image_for_retry(session, image_id, retry_attempt)
+            await repo.reset_image_for_retry(session, image_id, retry_attempt)
 
-        try:
-            result = await generate_with_retry(prompt)
-            # Upload to R2
-            r2_key = f"images/{job_id}/page_{page_number}.png"
-            await storage.upload_bytes(result.image_data, r2_key, "image/png")
-            file_size = len(result.image_data) if result.image_data else None
+            try:
+                result = await generate_with_retry(prompt)
+                # Upload to R2
+                r2_key = f"images/{job_id}/page_{page_number}.png"
+                await storage.upload_bytes(result.image_data, r2_key, "image/png")
+                file_size = len(result.image_data) if result.image_data else None
 
-            await repo.update_generated_image(
-                session, image_id,
-                status="completed",
-                r2_key=r2_key,
-                file_size_bytes=file_size,
-                error=None,
-            )
-            logger.info(f"[{job_id}] Page {page_number} retry succeeded")
+                await repo.update_generated_image(
+                    session, image_id,
+                    status="completed",
+                    r2_key=r2_key,
+                    file_size_bytes=file_size,
+                    error=None,
+                )
+                logger.info(f"[{job_id}] Page {page_number} retry succeeded")
 
-        except ImageGenerationError as e:
-            await repo.update_generated_image(
-                session, image_id,
-                status="failed",
-                error=str(e),
-            )
-            logger.warning(f"[{job_id}] Page {page_number} retry failed: {e}")
+            except ImageGenerationError as e:
+                await repo.update_generated_image(
+                    session, image_id,
+                    status="failed",
+                    error=str(e),
+                )
+                logger.warning(f"[{job_id}] Page {page_number} retry failed: {e}")
+    finally:
+        await generator.close()
 
     # Regenerate PDFs with all successful images
     await repo.update_book_job(
