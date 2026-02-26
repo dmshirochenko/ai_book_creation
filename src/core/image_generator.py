@@ -7,6 +7,7 @@ using OpenRouter API.
 
 from __future__ import annotations
 
+import io
 import os
 import asyncio
 import httpx
@@ -14,6 +15,8 @@ import base64
 import hashlib
 import logging
 from typing import Optional, List, Dict, Any, Callable, Awaitable, TYPE_CHECKING
+
+from PIL import Image
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -139,6 +142,22 @@ class ImagePromptBuilder:
             )
 
 
+def _normalize_image_bytes(raw: bytes) -> bytes:
+    """Validate image bytes with PIL and re-encode as PNG.
+
+    AI models may return WebP, JPEG, or other formats regardless of what the
+    data-URL header claims.  Re-encoding through PIL guarantees that
+    downstream consumers (reportlab / ImageReader) always receive a valid PNG.
+    """
+    img = Image.open(io.BytesIO(raw))
+    img.load()  # force full decode — raises early on corrupt data
+    if img.mode not in ("RGB", "RGBA"):
+        img = img.convert("RGBA")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 class OpenRouterImageGenerator:
     """Generate images using OpenRouter API with chat completions endpoint.
 
@@ -209,6 +228,16 @@ class OpenRouterImageGenerator:
                         # Parse data URL: "data:image/png;base64,ENCODED_DATA"
                         header, encoded = image_url.split(",", 1)
                         image_bytes = base64.b64decode(encoded)
+
+                        # Validate & re-encode as PNG so reportlab can always read it
+                        try:
+                            image_bytes = _normalize_image_bytes(image_bytes)
+                        except Exception as e:
+                            logger.error(f"Image validation failed: {e}")
+                            return GeneratedImage(
+                                success=False,
+                                error=f"Image validation failed: {e}",
+                            )
 
                         return GeneratedImage(
                             success=True,
