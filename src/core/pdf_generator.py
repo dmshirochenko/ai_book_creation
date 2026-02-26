@@ -379,13 +379,22 @@ class BasePDFGenerator:
 
         if image_reader:
             # Layout with image: image on top, text at bottom
-            self._draw_page_with_image(
-                c, page, image_reader,
-                x_offset, y_offset, page_width, page_height,
-                text_center_x, text_width,
-                full_page_image=full_page_image
-            )
-        else:
+            try:
+                self._draw_page_with_image(
+                    c, page, image_reader,
+                    x_offset, y_offset, page_width, page_height,
+                    text_center_x, text_width,
+                    full_page_image=full_page_image
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to draw image for page %s, falling back to text-only",
+                    page.page_number, exc_info=True,
+                )
+                # Fall back to text-only layout below
+                image_reader = None
+
+        if not image_reader:
             # Text-only layout (centered)
             text_y = y_offset + page_height / 2
 
@@ -924,23 +933,22 @@ def generate_both_pdfs(
 
     # Shared read-only resources (thread-safe)
     font_manager = get_font_manager()
-    image_cache = ImageCache(images) if images else None
 
-    # Each generator gets its own TextWrapCache (different page widths
-    # produce different cache keys, so sharing has minimal benefit and
-    # separate caches avoid concurrent dict writes).
+    # Each thread gets its own ImageCache because ImageReader wraps a
+    # BytesIO stream that is NOT thread-safe — concurrent reads corrupt
+    # the stream position and cause "unrecognized data stream" errors.
     with ThreadPoolExecutor(max_workers=2) as pool:
         booklet_future = pool.submit(
             generate_booklet_pdf,
             content, booklet_path, config,
-            image_cache=image_cache,
+            image_cache=ImageCache(images) if images else None,
             text_cache=TextWrapCache(),
             font_manager=font_manager,
         )
         review_future = pool.submit(
             generate_sequential_pdf,
             content, review_path, config,
-            image_cache=image_cache,
+            image_cache=ImageCache(images) if images else None,
             text_cache=TextWrapCache(),
             font_manager=font_manager,
         )
