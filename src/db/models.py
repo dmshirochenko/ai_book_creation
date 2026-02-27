@@ -282,6 +282,8 @@ class CreditPricing(Base):
     credit_cost: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    is_image_model: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
