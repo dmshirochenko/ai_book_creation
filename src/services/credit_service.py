@@ -46,9 +46,16 @@ class CreditService:
         pricing = await self.get_pricing()
         return pricing.get("story_generation", Decimal("0"))
 
-    async def calculate_book_cost(self, pages: int, with_images: bool) -> Decimal:
+    async def calculate_book_cost(
+        self, pages: int, with_images: bool, image_model: str | None = None,
+    ) -> Decimal:
         pricing = await self.get_pricing()
-        key = "page_with_images" if with_images else "page_without_images"
+        if not with_images:
+            key = "page_without_images"
+        elif image_model and image_model in pricing:
+            key = image_model
+        else:
+            key = "page_with_images"
         return pages * pricing.get(key, Decimal("0"))
 
     async def get_balance(self, user_id: uuid.UUID) -> Decimal:

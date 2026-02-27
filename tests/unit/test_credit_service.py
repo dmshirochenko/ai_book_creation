@@ -92,6 +92,38 @@ class TestCalculateCosts:
             cost = await service.calculate_book_cost(pages=0, with_images=True)
             assert cost == Decimal("0")
 
+    @pytest.mark.asyncio
+    async def test_book_cost_with_image_model(self, service):
+        """calculate_book_cost uses per-model pricing when image_model is provided."""
+        with patch.object(service, "get_pricing", return_value={
+            "story_generation": Decimal("1.00"),
+            "page_with_images": Decimal("2.00"),
+            "page_without_images": Decimal("1.00"),
+            "openai/gpt-4o": Decimal("3.00"),
+        }):
+            cost = await service.calculate_book_cost(pages=8, with_images=True, image_model="openai/gpt-4o")
+            assert cost == Decimal("24.00")
+
+    @pytest.mark.asyncio
+    async def test_book_cost_with_unknown_model_falls_back(self, service):
+        """calculate_book_cost falls back to page_with_images when model not found."""
+        with patch.object(service, "get_pricing", return_value={
+            "page_with_images": Decimal("2.00"),
+            "page_without_images": Decimal("1.00"),
+        }):
+            cost = await service.calculate_book_cost(pages=8, with_images=True, image_model="unknown/model")
+            assert cost == Decimal("16.00")
+
+    @pytest.mark.asyncio
+    async def test_book_cost_without_images_ignores_model(self, service):
+        """calculate_book_cost ignores image_model when with_images is False."""
+        with patch.object(service, "get_pricing", return_value={
+            "page_without_images": Decimal("1.00"),
+            "openai/gpt-4o": Decimal("3.00"),
+        }):
+            cost = await service.calculate_book_cost(pages=8, with_images=False, image_model="openai/gpt-4o")
+            assert cost == Decimal("8.00")
+
 
 class TestGetBalance:
     @pytest.mark.asyncio
