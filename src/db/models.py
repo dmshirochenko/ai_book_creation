@@ -94,6 +94,7 @@ class StoryJob(Base):
 
     safety_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     safety_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    language_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
     generated_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     generated_story: Mapped[str | None] = mapped_column(Text, nullable=True)
