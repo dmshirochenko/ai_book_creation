@@ -380,55 +380,55 @@ async def _regenerate_book_inner(
 
     from src.core.image_generator import ImageConfig, OpenRouterImageGenerator, GeneratedImage as GenImg, ImageGenerationError
     from src.core.retry import async_retry
+    from src.core.config import DEFAULT_IMAGE_MODEL
 
-    image_config = ImageConfig()
-    generator = OpenRouterImageGenerator(image_config)
+    # Retry each failed image — each may use a different model
+    for img in failed_images:
+        image_id = img.id
+        prompt = img.prompt
+        page_number = img.page_number
+        retry_attempt = img.retry_attempt + 1
+        model = img.image_model or DEFAULT_IMAGE_MODEL
 
-    # Wrap generator.generate with retry
-    @async_retry(max_attempts=3, backoff_base=2.0)
-    async def generate_with_retry(prompt: str) -> GenImg:
-        result = await generator.generate(prompt)
-        if not result.success:
-            raise ImageGenerationError(result.error or "Unknown error")
-        return result
+        logger.info(f"[{job_id}] Retrying page {page_number} (attempt #{retry_attempt}) with model {model}")
 
-    # Retry each failed image
-    try:
-        for img in failed_images:
-            image_id = img.id
-            prompt = img.prompt
-            page_number = img.page_number
-            retry_attempt = img.retry_attempt + 1
+        image_config = ImageConfig(model=model)
+        generator = OpenRouterImageGenerator(image_config)
 
-            logger.info(f"[{job_id}] Retrying page {page_number} (attempt #{retry_attempt})")
+        @async_retry(max_attempts=3, backoff_base=2.0)
+        async def generate_with_retry(prompt: str) -> GenImg:
+            result = await generator.generate(prompt)
+            if not result.success:
+                raise ImageGenerationError(result.error or "Unknown error")
+            return result
 
-            await repo.reset_image_for_retry(session, image_id, retry_attempt)
+        await repo.reset_image_for_retry(session, image_id, retry_attempt)
 
-            try:
-                result = await generate_with_retry(prompt)
-                # Upload to R2
-                r2_key = f"images/{job_id}/page_{page_number}.png"
-                await storage.upload_bytes(result.image_data, r2_key, "image/png")
-                file_size = len(result.image_data) if result.image_data else None
+        try:
+            result = await generate_with_retry(prompt)
+            # Upload to R2
+            r2_key = f"images/{job_id}/page_{page_number}.png"
+            await storage.upload_bytes(result.image_data, r2_key, "image/png")
+            file_size = len(result.image_data) if result.image_data else None
 
-                await repo.update_generated_image(
-                    session, image_id,
-                    status="completed",
-                    r2_key=r2_key,
-                    file_size_bytes=file_size,
-                    error=None,
-                )
-                logger.info(f"[{job_id}] Page {page_number} retry succeeded")
+            await repo.update_generated_image(
+                session, image_id,
+                status="completed",
+                r2_key=r2_key,
+                file_size_bytes=file_size,
+                error=None,
+            )
+            logger.info(f"[{job_id}] Page {page_number} retry succeeded")
 
-            except ImageGenerationError as e:
-                await repo.update_generated_image(
-                    session, image_id,
-                    status="failed",
-                    error=str(e),
-                )
-                logger.warning(f"[{job_id}] Page {page_number} retry failed: {e}")
-    finally:
-        await generator.close()
+        except ImageGenerationError as e:
+            await repo.update_generated_image(
+                session, image_id,
+                status="failed",
+                error=str(e),
+            )
+            logger.warning(f"[{job_id}] Page {page_number} retry failed: {e}")
+        finally:
+            await generator.close()
 
     # Regenerate PDFs with all successful images
     await repo.update_book_job(
