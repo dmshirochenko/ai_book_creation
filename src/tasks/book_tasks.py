@@ -195,6 +195,7 @@ async def _generate_book_inner(
                     file_size_bytes=file_size,
                     error=result.error,
                     cached=result.cached,
+                    image_model=request.image_model,
                 )
 
                 if result.success and result.image_data:
