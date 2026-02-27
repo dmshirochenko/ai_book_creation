@@ -379,6 +379,8 @@ class CreditPricingItem(BaseModel):
     operation: str
     credit_cost: float
     description: Optional[str] = None
+    display_name: Optional[str] = None
+    is_image_model: bool = False
 
 
 class CreditPricingResponse(BaseModel):

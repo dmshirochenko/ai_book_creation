@@ -88,15 +88,21 @@ async def generate_book(
     try:
         book_cost = await credit_service.calculate_book_cost(
             pages=page_count, with_images=body.generate_images,
+            image_model=body.image_model if body.generate_images else None,
         )
         pricing_snapshot = await credit_service.get_pricing()
-        cost_per_page_key = "page_with_images" if body.generate_images else "page_without_images"
+        if body.generate_images and body.image_model in pricing_snapshot:
+            cost_per_page_key = body.image_model
+        elif body.generate_images:
+            cost_per_page_key = "page_with_images"
+        else:
+            cost_per_page_key = "page_without_images"
         usage_log_id = await credit_service.reserve(
             user_id=user_id,
             amount=book_cost,
             job_id=job_id,
             job_type="book",
-            description=f"Book: {body.title or 'Untitled'} ({page_count} pages{'  with images' if body.generate_images else ''})",
+            description=f"Book: {body.title or 'Untitled'} ({page_count} pages{', with images' if body.generate_images else ''})",
             metadata={
                 "title": body.title,
                 "pages": page_count,

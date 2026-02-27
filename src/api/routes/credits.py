@@ -49,6 +49,8 @@ async def get_pricing(
                 operation=r.operation,
                 credit_cost=float(round(r.credit_cost, 2)),
                 description=r.description,
+                display_name=r.display_name,
+                is_image_model=r.is_image_model,
             )
             for r in rows
         ]

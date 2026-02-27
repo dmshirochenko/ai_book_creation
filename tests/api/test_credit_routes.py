@@ -20,12 +20,15 @@ from src.api.rate_limit import limiter
 _TEST_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 
-def _make_pricing_row(*, operation="story_generation", cost="2.00", description="Generate a story"):
+def _make_pricing_row(*, operation="story_generation", cost="2.00", description="Generate a story",
+                      display_name=None, is_image_model=False):
     """Return a mock CreditPricing row."""
     row = MagicMock()
     row.operation = operation
     row.credit_cost = Decimal(cost)
     row.description = description
+    row.display_name = display_name
+    row.is_image_model = is_image_model
     row.is_active = True
     return row
 
