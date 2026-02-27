@@ -56,3 +56,39 @@ class TestDeletePdfsForBook:
         assert r2_keys == ["pdfs/job1/booklet.pdf", "pdfs/job1/review.pdf"]
         assert session.execute.call_count == 2
         session.commit.assert_awaited_once()
+
+
+class TestCreateGeneratedImageModel:
+    async def test_passes_image_model_to_orm(self):
+        session = AsyncMock()
+        session.refresh = AsyncMock()
+
+        image = await repo.create_generated_image(
+            session,
+            book_job_id=uuid.uuid4(),
+            user_id=uuid.uuid4(),
+            page_number=1,
+            prompt="A bunny in a garden",
+            prompt_hash="abc123",
+            status="completed",
+            image_model="google/gemini-2.5-flash-image",
+        )
+
+        added_obj = session.add.call_args[0][0]
+        assert added_obj.image_model == "google/gemini-2.5-flash-image"
+
+    async def test_image_model_defaults_to_none(self):
+        session = AsyncMock()
+        session.refresh = AsyncMock()
+
+        image = await repo.create_generated_image(
+            session,
+            book_job_id=uuid.uuid4(),
+            user_id=uuid.uuid4(),
+            page_number=1,
+            prompt="A bunny in a garden",
+            prompt_hash="abc123",
+        )
+
+        added_obj = session.add.call_args[0][0]
+        assert added_obj.image_model is None
