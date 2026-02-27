@@ -187,6 +187,7 @@ class GeneratedImage(Base):
     )
     r2_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    image_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     cached: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     retry_attempt: Mapped[int] = mapped_column(
