@@ -18,7 +18,7 @@ from slowapi import _rate_limit_exceeded_handler
 
 from src.api.middleware import ApiKeyMiddleware
 from src.api.rate_limit import limiter
-from src.api.routes import health, books, stories, credits
+from src.api.routes import health, books, stories, credits, config
 from src.core.cloudwatch_logging import setup_cloudwatch_logging, flush_cloudwatch_logging
 from src.db.engine import init_db, close_db, get_session_factory
 from src.services.credit_service import CreditService
@@ -167,6 +167,7 @@ app.include_router(health.router, prefix="/api/v1")
 app.include_router(books.router, prefix="/api/v1")
 app.include_router(stories.router, prefix="/api/v1")
 app.include_router(credits.router, prefix="/api/v1")
+app.include_router(config.router, prefix="/api/v1")
 
 
 @app.get("/", include_in_schema=False)

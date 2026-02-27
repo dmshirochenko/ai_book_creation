@@ -118,6 +118,7 @@ async def create_story_task(
                 tokens_used=result.tokens_used,
                 safety_status=result.safety_status,
                 safety_reasoning=result.safety_reasoning,
+                language_code=result.language_code,
             )
 
             # Confirm credit deduction

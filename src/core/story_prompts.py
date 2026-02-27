@@ -223,6 +223,7 @@ STORY REQUIREMENTS:
 TARGET AUDIENCE: {age_min}-{age_max} years old
 LANGUAGE: {language}
 IMPORTANT: You MUST write the entire story (title and all page text) in {language}. Do NOT use any other language. All output text must be in {language}.
+LANGUAGE DETECTION: After writing the story, detect which language you actually wrote it in and return its ISO 639-1 code (e.g., en, ru, es, fr, de, it, pt, zh, ja, ko) in the "language_code" field.
 TONE: {tone} (cheerful, calm, adventurous, or silly)
 LENGTH: {length} pages (short=6-8, medium=10-12, long=14-16)
 
@@ -249,7 +250,7 @@ USER'S STORY PROMPT:
 YOUR TASK:
 Generate an original, safe, engaging story based on the user's prompt. Always set the safety_status field. If the prompt is inappropriate or contains copyrighted characters, set safety_status to "unsafe" with a clear safety_reasoning, and return empty title and pages.
 
-Return the story as structured JSON with safety_status, safety_reasoning, title, and an array of pages."""
+Return the story as structured JSON with safety_status, safety_reasoning, title, language_code, and an array of pages."""
 
 
 # =============================================================================
@@ -275,6 +276,10 @@ STORY_OUTPUT_JSON_SCHEMA = {
                 "type": "string",
                 "description": "The story title, simple and engaging, 2-6 words"
             },
+            "language_code": {
+                "type": "string",
+                "description": "ISO 639-1 language code of the story text (e.g., en, ru, es, fr, de, it, pt, zh, ja, ko)"
+            },
             "pages": {
                 "type": "array",
                 "description": "Ordered list of story pages. If safety_status is 'unsafe', return an empty array.",
@@ -291,7 +296,7 @@ STORY_OUTPUT_JSON_SCHEMA = {
                 }
             }
         },
-        "required": ["safety_status", "safety_reasoning", "title", "pages"],
+        "required": ["safety_status", "safety_reasoning", "title", "language_code", "pages"],
         "additionalProperties": False
     }
 }
@@ -320,7 +325,7 @@ def parse_story_output_response(response_text: str) -> dict:
     Returns:
         Dict with "safety_status", "safety_reasoning", "title", and "pages", or empty structure on failure
     """
-    empty = {"title": "", "pages": [], "safety_status": "safe", "safety_reasoning": ""}
+    empty = {"title": "", "pages": [], "safety_status": "safe", "safety_reasoning": "", "language_code": None}
 
     try:
         text = response_text.strip()
@@ -344,6 +349,7 @@ def parse_story_output_response(response_text: str) -> dict:
         safety_status = data.get("safety_status", "safe")
         safety_reasoning = data.get("safety_reasoning", "")
         title = data.get("title", "")
+        language_code = data.get("language_code", "")
         pages = data.get("pages", [])
 
         if not isinstance(pages, list):
@@ -360,6 +366,7 @@ def parse_story_output_response(response_text: str) -> dict:
             "safety_status": str(safety_status),
             "safety_reasoning": str(safety_reasoning),
             "title": str(title),
+            "language_code": str(language_code) if language_code else None,
             "pages": normalized_pages,
         }
 
@@ -482,6 +489,8 @@ EVALUATION CRITERIA:
    - At least a basic story structure
    - Meaningful content (not a single repeated phrase)
 
+5. **Language Detection**: Detect the language of the story text and return its ISO 639-1 code (e.g., en, ru, es, fr, de, it, pt, zh, ja, ko) in the "language_code" field. Base this SOLELY on the actual text content, not on any metadata.
+
 RULES:
 - Set "status" to "pass" if the story is age-appropriate and safe
 - Set "status" to "fail" ONLY if the story contains genuinely inappropriate content
@@ -500,7 +509,7 @@ STORY TEXT:
 ---
 
 YOUR TASK:
-Evaluate the story above. Return your verdict as structured JSON with "status" (pass/fail) and "reasoning"."""
+Evaluate the story above. Return your verdict as structured JSON with "status" (pass/fail), "reasoning", and "language_code" (ISO 639-1 code of the detected language)."""
 
 
 # =============================================================================
@@ -521,9 +530,13 @@ STORY_VALIDATION_JSON_SCHEMA = {
             "reasoning": {
                 "type": "string",
                 "description": "If status is 'fail', a short parent-friendly explanation. If 'pass', empty string."
+            },
+            "language_code": {
+                "type": "string",
+                "description": "ISO 639-1 language code detected from the story text (e.g., en, ru, es, fr, de, it, pt, zh, ja, ko)"
             }
         },
-        "required": ["status", "reasoning"],
+        "required": ["status", "reasoning", "language_code"],
         "additionalProperties": False
     }
 }
@@ -576,9 +589,9 @@ def parse_story_validation_response(response_text: str) -> dict:
         response_text: Raw text response from LLM (should be valid JSON with structured outputs)
 
     Returns:
-        Dict with "status" ("pass"/"fail") and "reasoning" (string)
+        Dict with "status" ("pass"/"fail"), "reasoning" (string), and "language_code" (string or None)
     """
-    empty = {"status": "fail", "reasoning": "Unable to validate story content."}
+    empty = {"status": "fail", "reasoning": "Unable to validate story content.", "language_code": None}
 
     try:
         text = response_text.strip()
@@ -601,6 +614,7 @@ def parse_story_validation_response(response_text: str) -> dict:
 
         status = data.get("status", "fail")
         reasoning = data.get("reasoning", "")
+        language_code = data.get("language_code", "")
 
         if status not in ("pass", "fail"):
             logger.error(f"Invalid validation status: {status}")
@@ -609,6 +623,7 @@ def parse_story_validation_response(response_text: str) -> dict:
         return {
             "status": str(status),
             "reasoning": str(reasoning),
+            "language_code": str(language_code) if language_code else None,
         }
 
     except (json.JSONDecodeError, KeyError, TypeError) as e:
@@ -662,8 +677,10 @@ STORY TEXT:
 
 ---
 
+LANGUAGE DETECTION: Detect the language of the story text and return its ISO 639-1 code (e.g., en, ru, es, fr, de, it, pt, zh, ja, ko) in the "language_code" field.
+
 YOUR TASK:
-Split the story text above into pages. Return the result as structured JSON with "title" (echo back the title) and "pages" (array of objects with "text" field). Every word must be preserved exactly."""
+Split the story text above into pages. Return the result as structured JSON with "title" (echo back the title), "language_code" (ISO 639-1 code of the detected language), and "pages" (array of objects with "text" field). Every word must be preserved exactly."""
 
 
 # =============================================================================
@@ -679,6 +696,10 @@ STORY_RESPLIT_JSON_SCHEMA = {
             "title": {
                 "type": "string",
                 "description": "The story title (echoed back from input)"
+            },
+            "language_code": {
+                "type": "string",
+                "description": "ISO 639-1 language code detected from the story text (e.g., en, ru, es, fr, de, it, pt, zh, ja, ko)"
             },
             "pages": {
                 "type": "array",
@@ -696,7 +717,7 @@ STORY_RESPLIT_JSON_SCHEMA = {
                 }
             }
         },
-        "required": ["title", "pages"],
+        "required": ["title", "language_code", "pages"],
         "additionalProperties": False
     }
 }
@@ -749,10 +770,10 @@ def parse_story_resplit_response(response_text: str) -> dict:
         response_text: Raw text response from LLM (should be valid JSON with structured outputs)
 
     Returns:
-        Dict with "title" (str) and "pages" (list of {"text": str}),
+        Dict with "title" (str), "language_code" (str or None), and "pages" (list of {"text": str}),
         or empty structure on failure.
     """
-    empty = {"title": "", "pages": []}
+    empty = {"title": "", "pages": [], "language_code": None}
 
     try:
         text = response_text.strip()
@@ -774,6 +795,7 @@ def parse_story_resplit_response(response_text: str) -> dict:
             return empty
 
         title = data.get("title", "")
+        language_code = data.get("language_code", "")
         pages = data.get("pages", [])
 
         if not isinstance(pages, list):
@@ -794,6 +816,7 @@ def parse_story_resplit_response(response_text: str) -> dict:
 
         return {
             "title": str(title),
+            "language_code": str(language_code) if language_code else None,
             "pages": normalized_pages,
         }
 

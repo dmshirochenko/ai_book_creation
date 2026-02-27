@@ -19,17 +19,32 @@ class StoryStructuredInput(BaseModel):
     pages: List[StoryPageItem] = Field(..., min_length=1, max_length=50, description="Story pages")
 
 
+SUPPORTED_LANGUAGES = {
+    "en": "English",
+    "ru": "Russian",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "zh": "Chinese",
+    "ja": "Japanese",
+    "ko": "Korean",
+}
+
+TEXT_ON_IMAGE_SUPPORTED_LANGUAGES = ["en"]
+
 END_TEXT_BY_LANGUAGE = {
-    "english": "The End",
-    "russian": "Конец",
-    "spanish": "Fin",
-    "french": "Fin",
-    "german": "Ende",
-    "italian": "Fine",
-    "portuguese": "Fim",
-    "chinese": "终",
-    "japanese": "おしまい",
-    "korean": "끝",
+    "en": "The End",
+    "ru": "Конец",
+    "es": "Fin",
+    "fr": "Fin",
+    "de": "Ende",
+    "it": "Fine",
+    "pt": "Fim",
+    "zh": "终",
+    "ja": "おしまい",
+    "ko": "끝",
 }
 
 
@@ -67,7 +82,28 @@ class BookGenerateRequest(BaseModel):
     def set_end_text_from_language(self):
         if self.end_text is None:
             lang_key = self.language.lower().strip()
-            self.end_text = END_TEXT_BY_LANGUAGE.get(lang_key, "The End")
+            # Try as ISO code first, then try mapping full name to code
+            if lang_key in END_TEXT_BY_LANGUAGE:
+                self.end_text = END_TEXT_BY_LANGUAGE[lang_key]
+            else:
+                # Map full name to code: "english" -> "en"
+                name_to_code = {v.lower(): k for k, v in SUPPORTED_LANGUAGES.items()}
+                code = name_to_code.get(lang_key)
+                self.end_text = END_TEXT_BY_LANGUAGE.get(code, "The End") if code else "The End"
+        return self
+
+    @model_validator(mode="after")
+    def validate_text_on_image_language(self):
+        if self.text_on_image:
+            lang_key = self.language.lower().strip()
+            # Check if it's a code or full name
+            name_to_code = {v.lower(): k for k, v in SUPPORTED_LANGUAGES.items()}
+            code = lang_key if lang_key in SUPPORTED_LANGUAGES else name_to_code.get(lang_key)
+            if code and code not in TEXT_ON_IMAGE_SUPPORTED_LANGUAGES:
+                raise ValueError(
+                    f"Text on image is not supported for language '{self.language}'. "
+                    f"Supported languages: {', '.join(TEXT_ON_IMAGE_SUPPORTED_LANGUAGES)}"
+                )
         return self
 
     model_config = {
@@ -264,7 +300,7 @@ class StoryJobStatus(BaseModel):
     generated_story_json: Optional[dict] = Field(None, description="Structured story data: {title, pages: [{text}]}")
     story_length: Optional[int] = Field(None, description="Number of pages/lines in story")
     tokens_used: Optional[int] = Field(None, description="Tokens used for generation")
-
+    language_code: Optional[str] = Field(None, description="ISO 639-1 code of the language the story was generated in")
 
 
 class StoryCreateResponse(BaseModel):
@@ -317,6 +353,7 @@ class StoryValidateResponse(BaseModel):
         "",
         description="If status is 'fail', explains why the story did not pass validation"
     )
+    language_code: Optional[str] = Field(None, description="ISO 639-1 code detected from the story text")
 
 
 # =============================================================================
@@ -368,6 +405,7 @@ class StoryResplitResponse(BaseModel):
         ...,
         description="Story text split into pages with narrative-aware breaks"
     )
+    language_code: Optional[str] = Field(None, description="ISO 639-1 code detected from the story text")
 
 
 # =============================================================================

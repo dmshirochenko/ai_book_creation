@@ -47,6 +47,7 @@ class StoryGenerationResult:
     safety_violations: List[str] = field(default_factory=list)
     safety_status: str = "safe"
     safety_reasoning: str = ""
+    language_code: Optional[str] = None
 
 
 @dataclass
@@ -54,6 +55,7 @@ class StoryValidationResult:
     """Result of story validation."""
     status: str  # "pass" or "fail"
     reasoning: str = ""
+    language_code: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -63,6 +65,7 @@ class StoryResplitResult:
     success: bool
     story_structured: dict = field(default_factory=dict)  # {"title": str, "pages": [{"text": str}]}
     page_count: int = 0
+    language_code: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -238,6 +241,7 @@ class StoryGenerator:
             page_count=len(story_lines),
             tokens_used=response.tokens_used,
             safety_status="safe",
+            language_code=parsed.get("language_code"),
         )
 
     async def validate_story(
@@ -311,6 +315,7 @@ class StoryGenerator:
         return StoryValidationResult(
             status=parsed["status"],
             reasoning=parsed["reasoning"],
+            language_code=parsed.get("language_code"),
         )
 
     async def resplit_story(
@@ -376,6 +381,7 @@ class StoryGenerator:
             success=True,
             story_structured=parsed,
             page_count=len(parsed["pages"]),
+            language_code=parsed.get("language_code"),
         )
 
 

@@ -178,6 +178,7 @@ class TestGetStoryCreationResponseFormat:
         assert "safety_status" in schema["properties"]
         assert "safety_reasoning" in schema["properties"]
         assert "title" in schema["properties"]
+        assert "language_code" in schema["properties"]
         assert "pages" in schema["properties"]
 
 
@@ -235,15 +236,15 @@ class TestParseStoryOutputResponse:
 
     def test_invalid_json(self):
         result = parse_story_output_response("not json")
-        assert result == {"title": "", "pages": [], "safety_status": "safe", "safety_reasoning": ""}
+        assert result == {"title": "", "pages": [], "safety_status": "safe", "safety_reasoning": "", "language_code": None}
 
     def test_not_a_dict(self):
         result = parse_story_output_response(json.dumps([1, 2, 3]))
-        assert result == {"title": "", "pages": [], "safety_status": "safe", "safety_reasoning": ""}
+        assert result == {"title": "", "pages": [], "safety_status": "safe", "safety_reasoning": "", "language_code": None}
 
     def test_pages_not_a_list(self):
         result = parse_story_output_response(json.dumps({"title": "T", "pages": "bad"}))
-        assert result == {"title": "", "pages": [], "safety_status": "safe", "safety_reasoning": ""}
+        assert result == {"title": "", "pages": [], "safety_status": "safe", "safety_reasoning": "", "language_code": None}
 
     def test_invalid_page_entries_skipped(self):
         data = {
@@ -295,6 +296,7 @@ class TestStoryValidation:
         schema = fmt["json_schema"]["schema"]
         assert "status" in schema["properties"]
         assert "reasoning" in schema["properties"]
+        assert "language_code" in schema["properties"]
 
     def test_parse_validation_pass(self):
         response = json.dumps({"status": "pass", "reasoning": ""})
@@ -369,6 +371,7 @@ class TestStoryResplit:
         assert "json_schema" in fmt
         schema = fmt["json_schema"]["schema"]
         assert "title" in schema["properties"]
+        assert "language_code" in schema["properties"]
         assert "pages" in schema["properties"]
 
     def test_parse_resplit_valid_response(self):
@@ -389,11 +392,13 @@ class TestStoryResplit:
         result = parse_story_resplit_response(response)
         assert result["pages"] == []
         assert result["title"] == ""  # empty result on no pages
+        assert result["language_code"] is None
 
     def test_parse_resplit_invalid_json(self):
         result = parse_story_resplit_response("not json at all")
         assert result["title"] == ""
         assert result["pages"] == []
+        assert result["language_code"] is None
 
     def test_parse_resplit_skips_empty_page_text(self):
         response = json.dumps({
@@ -420,11 +425,13 @@ class TestStoryResplit:
         result = parse_story_resplit_response(json.dumps([1, 2, 3]))
         assert result["title"] == ""
         assert result["pages"] == []
+        assert result["language_code"] is None
 
     def test_parse_resplit_pages_not_a_list(self):
         result = parse_story_resplit_response(json.dumps({"title": "T", "pages": "bad"}))
         assert result["title"] == ""
         assert result["pages"] == []
+        assert result["language_code"] is None
 
     def test_parse_resplit_invalid_page_entries_skipped(self):
         data = {

@@ -183,6 +183,7 @@ async def validate_story(
         return StoryValidateResponse(
             status=result.status,
             reasoning=result.reasoning,
+            language_code=result.language_code,
         )
 
     except HTTPException:
@@ -259,6 +260,7 @@ async def resplit_story(
                 StoryResplitPageItem(text=p["text"])
                 for p in result.story_structured["pages"]
             ],
+            language_code=result.language_code,
         )
 
     except HTTPException:
@@ -309,6 +311,7 @@ async def get_story_status(
         generated_story_json=job.generated_story_json,
         story_length=job.story_length,
         tokens_used=job.tokens_used,
+        language_code=job.language_code,
     )
 
 
