@@ -102,7 +102,7 @@ async def generate_book(
             amount=book_cost,
             job_id=job_id,
             job_type="book",
-            description=f"Book: {body.title or 'Untitled'} ({page_count} pages{'  with images' if body.generate_images else ''})",
+            description=f"Book: {body.title or 'Untitled'} ({page_count} pages{', with images' if body.generate_images else ''})",
             metadata={
                 "title": body.title,
                 "pages": page_count,

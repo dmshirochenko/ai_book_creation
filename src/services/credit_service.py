@@ -55,6 +55,8 @@ class CreditService:
         elif image_model and image_model in pricing:
             key = image_model
         else:
+            if image_model:
+                logger.warning(f"Image model '{image_model}' not found in pricing, falling back to page_with_images")
             key = "page_with_images"
         return pages * pricing.get(key, Decimal("0"))
 
