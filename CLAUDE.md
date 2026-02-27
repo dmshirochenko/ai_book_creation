@@ -64,6 +64,8 @@ POST /stories/create → Structured JSON generation (Gemini Flash) → Book PDF
 ## Database
 
 - **Migrations**: Always use Alembic with manually written migration scripts. Do NOT use `Base.metadata.create_all()` for schema changes or attempt autogenerate without a live DB connection.
+- **Migrations are DDL only**: Alembic migrations must contain only schema/table changes (CREATE, ALTER, DROP). Never insert seed data, configuration rows, or any DML (INSERT/UPDATE/DELETE) in migrations. Use separate scripts or admin endpoints for data seeding.
+- **ORM models in migrations**: Always use SQLAlchemy ORM column types and operations (`op.add_column`, `op.create_table`, etc.) in Alembic migrations. Never write raw/pure SQL.
 - **Production**: Uses Supabase with pgbouncer — requires `statement_cache_size=0` for asyncpg connections.
 - **Sessions**: Use async SQLAlchemy sessions. Avoid sharing sessions across concurrent tasks (use `asyncio.gather()` carefully).
 
