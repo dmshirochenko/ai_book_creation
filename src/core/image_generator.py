@@ -142,17 +142,38 @@ class ImagePromptBuilder:
             )
 
 
-def _normalize_image_bytes(raw: bytes) -> bytes:
-    """Validate image bytes with PIL and re-encode as PNG.
+# Max pixel dimension for generated images.  A5 at 150 DPI ≈ 877×1240 px.
+# 1400 px gives comfortable headroom for high-quality print while keeping
+# memory and CPU usage manageable (especially for models like Seedream 4.5
+# that output 2048+ px images weighing ~4 MB each).
+_MAX_IMAGE_DIMENSION = 1400
+
+
+def _normalize_image_bytes(raw: bytes, max_dimension: int = _MAX_IMAGE_DIMENSION) -> bytes:
+    """Validate image bytes with PIL, downscale if needed, and re-encode as PNG.
 
     AI models may return WebP, JPEG, or other formats regardless of what the
     data-URL header claims.  Re-encoding through PIL guarantees that
     downstream consumers (reportlab / ImageReader) always receive a valid PNG.
+
+    Images larger than *max_dimension* on either axis are scaled down
+    (preserving aspect ratio) to avoid excessive CPU and memory usage
+    during PDF generation.
     """
     img = Image.open(io.BytesIO(raw))
     img.load()  # force full decode — raises early on corrupt data
     if img.mode not in ("RGB", "RGBA"):
         img = img.convert("RGBA")
+
+    # Downscale oversized images to fit within max_dimension
+    w, h = img.size
+    if max(w, h) > max_dimension:
+        scale = max_dimension / max(w, h)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+        logger.info(f"Downscaled image from {w}x{h} to {new_w}x{new_h}")
+
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
