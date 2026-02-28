@@ -199,6 +199,7 @@ Keep content age-appropriate for {age_min}-{age_max} year olds.
 3. **Copyright Compliance**:
    - DO NOT use any copyrighted characters (Disney, Marvel, Pixar, etc.)
    - Create ORIGINAL characters with unique names
+   - Character names should reflect their personality and match the story's tone — avoid repeating common names like Max, Luna, or Lily every time
    - If the user's prompt mentions copyrighted characters, CREATE NEW ORIGINAL CHARACTERS with a similar spirit
 
 4. **Safety Status**:
