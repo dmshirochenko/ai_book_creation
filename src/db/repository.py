@@ -212,6 +212,7 @@ async def create_generated_image(
     file_size_bytes: Optional[int] = None,
     error: Optional[str] = None,
     cached: bool = False,
+    image_model: Optional[str] = None,
 ) -> GeneratedImage:
     image = GeneratedImage(
         book_job_id=book_job_id,
@@ -224,6 +225,7 @@ async def create_generated_image(
         file_size_bytes=file_size_bytes,
         error=error,
         cached=cached,
+        image_model=image_model,
     )
     session.add(image)
     await session.commit()
