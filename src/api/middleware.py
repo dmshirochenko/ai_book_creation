@@ -2,6 +2,7 @@
 Custom middleware for API security.
 """
 
+import hmac
 import logging
 from typing import Optional
 
@@ -41,7 +42,7 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
 
         # Validate the key
         provided_key = request.headers.get("X-Api-Key")
-        if not provided_key or provided_key != self._api_key:
+        if not provided_key or not hmac.compare_digest(provided_key, self._api_key):
             logger.warning(f"Rejected request to {request.url.path}: invalid API key")
             return JSONResponse(
                 status_code=403,

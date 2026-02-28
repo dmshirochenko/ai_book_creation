@@ -86,6 +86,16 @@ class StoryGenerator:
         self.config = config
         self.client = OpenRouterClient(config)
 
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
+        await self.client.close()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc):
+        await self.close()
+
     def _validate_prompt_safety(self, prompt: str) -> tuple[bool, List[str]]:
         """
         Pre-generation safety validation.
@@ -419,12 +429,12 @@ async def generate_story_from_prompt(
     # Increase max_tokens for story generation (stories need more space)
     config.max_tokens = 3000
 
-    generator = StoryGenerator(config)
-    return await generator.generate_story(
-        user_prompt=user_prompt,
-        age_min=age_min,
-        age_max=age_max,
-        tone=tone,
-        length=length,
-        language=language
-    )
+    async with StoryGenerator(config) as generator:
+        return await generator.generate_story(
+            user_prompt=user_prompt,
+            age_min=age_min,
+            age_max=age_max,
+            tone=tone,
+            length=length,
+            language=language
+        )

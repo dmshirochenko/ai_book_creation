@@ -159,7 +159,8 @@ class TestDownloadBook:
             assert resp.status_code == 400
             assert "not ready" in resp.json()["detail"].lower()
 
-    async def test_invalid_pdf_type_returns_400(self, client):
+    async def test_invalid_pdf_type_returns_422(self, client):
+        """FastAPI returns 422 for Literal type mismatch (not 'booklet' or 'review')."""
         job = _make_book_job()
         with patch(
             "src.api.routes.books.repo.get_book_job_for_user",
@@ -169,8 +170,7 @@ class TestDownloadBook:
             resp = await client.get(
                 f"/api/v1/books/{_TEST_JOB_ID}/download/invalid"
             )
-            assert resp.status_code == 400
-            assert "Invalid pdf_type" in resp.json()["detail"]
+            assert resp.status_code == 422
 
     async def test_missing_filename_returns_404(self, client):
         job = _make_book_job(booklet_filename=None)

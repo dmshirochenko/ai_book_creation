@@ -10,6 +10,10 @@ import os
 DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image"
 DEFAULT_ANALYSIS_MODEL = "google/gemini-2.5-flash"  # Supports structured outputs
 
+# TextProcessor defaults (used in routes and tasks)
+DEFAULT_MAX_SENTENCES_PER_PAGE = 2
+DEFAULT_MAX_CHARS_PER_PAGE = 100
+
 from dotenv import load_dotenv
 
 load_dotenv()

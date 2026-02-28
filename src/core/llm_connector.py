@@ -29,7 +29,11 @@ class LLMResponse:
 
 
 class OpenRouterClient:
-    """Client for OpenRouter API for story analysis and generation."""
+    """Client for OpenRouter API for story analysis and generation.
+
+    Reuses a single httpx.AsyncClient across calls to avoid
+    TCP+TLS handshake overhead per request.
+    """
 
     def __init__(self, config: LLMConfig):
         self.config = config
@@ -39,6 +43,11 @@ class OpenRouterClient:
             "HTTP-Referer": "https://github.com/book-generator",
             "X-Title": "Children's Book Generator"
         }
+        self._client = httpx.AsyncClient(timeout=60.0)
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
+        await self._client.aclose()
 
     async def _call_llm(
         self,
@@ -83,23 +92,22 @@ class OpenRouterClient:
             payload["response_format"] = response_format
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    f"{self.config.base_url}/chat/completions",
-                    headers=self.headers,
-                    json=payload
-                )
-                response.raise_for_status()
+            response = await self._client.post(
+                f"{self.config.base_url}/chat/completions",
+                headers=self.headers,
+                json=payload
+            )
+            response.raise_for_status()
 
-                data = response.json()
-                content = data["choices"][0]["message"]["content"]
-                tokens = data.get("usage", {}).get("total_tokens", 0)
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            tokens = data.get("usage", {}).get("total_tokens", 0)
 
-                return LLMResponse(
-                    content=content.strip(),
-                    tokens_used=tokens,
-                    success=True
-                )
+            return LLMResponse(
+                content=content.strip(),
+                tokens_used=tokens,
+                success=True
+            )
 
         except httpx.HTTPStatusError as e:
             return LLMResponse(
@@ -169,4 +177,7 @@ async def analyze_story_for_visuals(
         config = LLMConfig()
 
     client = OpenRouterClient(config)
-    return await client.analyze_story(story)
+    try:
+        return await client.analyze_story(story)
+    finally:
+        await client.close()
