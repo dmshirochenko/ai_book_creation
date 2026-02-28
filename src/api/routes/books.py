@@ -66,6 +66,11 @@ async def generate_book(
             status_code=400, detail="age_min must be less than or equal to age_max"
         )
 
+    # Resolve style slug to prompt string from DB
+    style_record = await repo.get_illustration_style_by_slug(db, body.image_style)
+    if style_record:
+        body.image_style = style_record.prompt_string
+
     job_id = uuid.uuid4()
 
     # Calculate page count for cost estimation

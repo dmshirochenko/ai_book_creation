@@ -67,8 +67,8 @@ class BookGenerateRequest(BaseModel):
         description="OpenRouter image model to use"
     )
     image_style: str = Field(
-        "children's book illustration, soft watercolor style, gentle colors, simple shapes, cute and friendly",
-        description="Style description for generated images"
+        "watercolor",
+        description="Illustration style slug (e.g., 'watercolor', '2d-cartoon') or full prompt string"
     )
     use_image_cache: bool = Field(True, description="Use cached images if available")
     text_on_image: bool = Field(False, description="Render story text directly on images")
@@ -472,3 +472,20 @@ class PaginatedUsageLogsResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# =============================================================================
+# ILLUSTRATION STYLE SCHEMAS
+# =============================================================================
+
+class IllustrationStyleItem(BaseModel):
+    """A single illustration style (public, no prompt details)."""
+    slug: str
+    icon_name: str
+    display_order: int
+    preview_image_url: Optional[str] = None
+
+
+class IllustrationStylesResponse(BaseModel):
+    """Response for GET /config/illustration-styles."""
+    styles: List[IllustrationStyleItem]

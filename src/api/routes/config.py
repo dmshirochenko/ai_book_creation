@@ -4,8 +4,16 @@ Configuration endpoints.
 Public endpoints that expose non-sensitive application configuration.
 """
 
-from fastapi import APIRouter
-from src.api.schemas import TEXT_ON_IMAGE_SUPPORTED_LANGUAGES
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.api.deps import get_db
+from src.api.schemas import (
+    TEXT_ON_IMAGE_SUPPORTED_LANGUAGES,
+    IllustrationStyleItem,
+    IllustrationStylesResponse,
+)
+from src.db import repository as repo
 
 router = APIRouter(prefix="/config", tags=["Configuration"])
 
@@ -20,3 +28,27 @@ async def get_text_on_image_languages() -> dict:
     the "Text on Image" toggle in book configuration.
     """
     return {"supported_languages": TEXT_ON_IMAGE_SUPPORTED_LANGUAGES}
+
+
+@router.get("/illustration-styles", response_model=IllustrationStylesResponse)
+async def get_illustration_styles(
+    db: AsyncSession = Depends(get_db),
+) -> IllustrationStylesResponse:
+    """
+    Get available illustration styles for book generation.
+
+    Returns active styles ordered by display_order. The frontend uses
+    slug for style selection and icon_name for Lucide icon mapping.
+    """
+    styles = await repo.list_active_illustration_styles(db)
+    return IllustrationStylesResponse(
+        styles=[
+            IllustrationStyleItem(
+                slug=s.slug,
+                icon_name=s.icon_name,
+                display_order=s.display_order,
+                preview_image_url=s.preview_image_url,
+            )
+            for s in styles
+        ]
+    )

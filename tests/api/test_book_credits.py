@@ -2,7 +2,7 @@
 
 import uuid
 from decimal import Decimal
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient, ASGITransport
@@ -63,6 +63,11 @@ async def client():
     with (
         patch("src.api.app.init_db", new_callable=AsyncMock),
         patch("src.api.app.close_db", new_callable=AsyncMock),
+        patch(
+            "src.api.routes.books.repo.get_illustration_style_by_slug",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
     ):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as c:
@@ -310,3 +315,47 @@ class TestBookCredits:
             # add_task(generate_book_task, str(job_id), body, user_id, usage_log_id)
             positional_args = mock_add_task.call_args.args
             assert positional_args[4] == usage_log_id
+
+    async def test_slug_resolved_to_prompt_string(self, client):
+        """When image_style is a known slug, it is replaced with the DB prompt_string before job creation."""
+        usage_log_id = uuid.uuid4()
+        mock_style = MagicMock()
+        mock_style.prompt_string = "children's book illustration, soft watercolor style, gentle colors"
+
+        body = {**_VALID_BOOK_BODY, "image_style": "watercolor"}
+
+        with (
+            patch(
+                "src.api.routes.books.repo.get_illustration_style_by_slug",
+                new_callable=AsyncMock,
+                return_value=mock_style,
+            ),
+            patch(
+                "src.api.routes.books.CreditService.calculate_book_cost",
+                new_callable=AsyncMock,
+                return_value=Decimal("20.00"),
+            ),
+            patch(
+                "src.api.routes.books.CreditService.get_pricing",
+                new_callable=AsyncMock,
+                return_value=_PRICING_SNAPSHOT,
+            ),
+            patch(
+                "src.api.routes.books.CreditService.reserve",
+                new_callable=AsyncMock,
+                return_value=usage_log_id,
+            ),
+            patch(
+                "src.api.routes.books.repo.create_book_job",
+                new_callable=AsyncMock,
+            ) as mock_create_job,
+            patch(
+                "src.api.routes.books.BackgroundTasks.add_task",
+            ) as mock_add_task,
+        ):
+            resp = await client.post("/api/v1/books/generate", json=body)
+
+            assert resp.status_code == 200
+            # The body passed to add_task should have the resolved prompt string
+            task_body = mock_add_task.call_args.args[2]
+            assert task_body.image_style == mock_style.prompt_string

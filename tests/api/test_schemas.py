@@ -16,6 +16,8 @@ from src.api.schemas import (
     StoryCreateRequest,
     StoryJobStatus,
     StoryCreateResponse,
+    IllustrationStyleItem,
+    IllustrationStylesResponse,
 )
 
 
@@ -31,6 +33,7 @@ class TestBookGenerateRequest:
         assert req.age_min == 2
         assert req.age_max == 4
         assert req.generate_images is False
+        assert req.image_style == "watercolor"
 
     def test_all_fields(self):
         req = BookGenerateRequest(
@@ -226,3 +229,54 @@ class TestResponseModels:
                 title="My Book",
                 # missing booklet_url, review_url, created_at
             )
+
+
+# =============================================================================
+# IllustrationStyleItem / IllustrationStylesResponse
+# =============================================================================
+
+
+class TestIllustrationStyleSchemas:
+    def test_illustration_style_item(self):
+        item = IllustrationStyleItem(
+            slug="watercolor",
+            icon_name="droplets",
+            display_order=1,
+        )
+        assert item.slug == "watercolor"
+        assert item.preview_image_url is None
+
+    def test_illustration_style_item_with_preview(self):
+        item = IllustrationStyleItem(
+            slug="watercolor",
+            icon_name="droplets",
+            display_order=1,
+            preview_image_url="https://example.com/preview.png",
+        )
+        assert item.preview_image_url == "https://example.com/preview.png"
+
+    def test_illustration_styles_response(self):
+        resp = IllustrationStylesResponse(
+            styles=[
+                IllustrationStyleItem(
+                    slug="watercolor",
+                    icon_name="droplets",
+                    display_order=1,
+                ),
+                IllustrationStyleItem(
+                    slug="2d-cartoon",
+                    icon_name="film",
+                    display_order=2,
+                ),
+            ]
+        )
+        assert len(resp.styles) == 2
+        assert resp.styles[0].slug == "watercolor"
+
+    def test_illustration_styles_response_empty(self):
+        resp = IllustrationStylesResponse(styles=[])
+        assert resp.styles == []
+
+    def test_illustration_style_item_missing_required(self):
+        with pytest.raises(ValidationError):
+            IllustrationStyleItem(slug="watercolor")  # missing icon_name, display_order
