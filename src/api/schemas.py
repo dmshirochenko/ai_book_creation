@@ -419,6 +419,7 @@ class CreditPricingItem(BaseModel):
     description: Optional[str] = None
     display_name: Optional[str] = None
     is_image_model: bool = False
+    display_order: int = 0
 
 
 class CreditPricingResponse(BaseModel):
