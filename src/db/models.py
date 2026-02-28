@@ -74,6 +74,7 @@ class BookJob(Base):
         Index("idx_book_jobs_user_id", "user_id"),
         Index("idx_book_jobs_status", "status"),
         Index("idx_book_jobs_created_at", "created_at"),
+        Index("idx_book_jobs_user_id_status", "user_id", "status"),
     )
 
 
@@ -123,6 +124,7 @@ class StoryJob(Base):
         ),
         Index("idx_story_jobs_user_id", "user_id"),
         Index("idx_story_jobs_status", "status"),
+        Index("idx_story_jobs_user_id_status", "user_id", "status"),
     )
 
 
@@ -214,6 +216,7 @@ class GeneratedImage(Base):
         Index("idx_generated_images_book_job_id", "book_job_id"),
         Index("idx_generated_images_prompt_hash", "prompt_hash"),
         Index("idx_generated_images_user_id", "user_id"),
+        Index("idx_generated_images_prompt_hash_status", "prompt_hash", "status"),
     )
 
 

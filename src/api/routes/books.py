@@ -4,6 +4,7 @@ Book generation endpoints.
 
 import uuid
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, Query
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -27,10 +28,10 @@ from src.api.schemas import (
     ErrorResponse,
 )
 from src.api.deps import get_db, get_current_user_id
-from src.core.storage import get_storage
+from src.core.storage import get_storage, build_pdf_r2_key
 from src.db import repository as repo
 from src.tasks.book_tasks import generate_book_task, regenerate_book_task
-from src.services.credit_service import CreditService, InsufficientCreditsError
+from src.services.credit_service import CreditService
 from src.api.rate_limit import limiter
 
 # Configure logging
@@ -61,11 +62,6 @@ async def generate_book(
     if not body.story.strip():
         raise HTTPException(status_code=400, detail="Story text cannot be empty")
 
-    if body.age_min > body.age_max:
-        raise HTTPException(
-            status_code=400, detail="age_min must be less than or equal to age_max"
-        )
-
     # Resolve style slug to prompt string from DB
     style_record = await repo.get_illustration_style_by_slug(db, body.image_style)
     if style_record:
@@ -78,7 +74,8 @@ async def generate_book(
         page_count = len(body.story_structured.pages) + 2  # +cover +end pages
     else:
         from src.core.text_processor import TextProcessor
-        processor = TextProcessor(max_sentences_per_page=2, max_chars_per_page=100)
+        from src.core.config import DEFAULT_MAX_SENTENCES_PER_PAGE, DEFAULT_MAX_CHARS_PER_PAGE
+        processor = TextProcessor(max_sentences_per_page=DEFAULT_MAX_SENTENCES_PER_PAGE, max_chars_per_page=DEFAULT_MAX_CHARS_PER_PAGE)
         book_content = processor.process_raw_story(
             story=body.story, title=body.title or "My Story",
             author=body.author, language=body.language,
@@ -88,44 +85,34 @@ async def generate_book(
     if page_count < 1:
         raise HTTPException(status_code=400, detail="Book must have at least one page")
 
-    # Reserve credits
+    # Reserve credits (InsufficientCreditsError handled by app-level exception handler)
     credit_service = CreditService(db)
-    try:
-        book_cost = await credit_service.calculate_book_cost(
-            pages=page_count, with_images=body.generate_images,
-            image_model=body.image_model if body.generate_images else None,
-        )
-        pricing_snapshot = await credit_service.get_pricing()
-        if body.generate_images and body.image_model in pricing_snapshot:
-            cost_per_page_key = body.image_model
-        elif body.generate_images:
-            cost_per_page_key = "page_with_images"
-        else:
-            cost_per_page_key = "page_without_images"
-        usage_log_id = await credit_service.reserve(
-            user_id=user_id,
-            amount=book_cost,
-            job_id=job_id,
-            job_type="book",
-            description=f"Book: {body.title or 'Untitled'} ({page_count} pages{', with images' if body.generate_images else ''})",
-            metadata={
-                "title": body.title,
-                "pages": page_count,
-                "with_images": body.generate_images,
-                "cost_per_page": float(pricing_snapshot.get(cost_per_page_key, 0)),
-                "total_cost": float(book_cost),
-                "pricing_snapshot": {k: float(v) for k, v in pricing_snapshot.items()},
-            },
-        )
-    except InsufficientCreditsError as e:
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "message": "Insufficient credits",
-                "balance": float(e.balance),
-                "required": float(e.required),
-            },
-        )
+    book_cost = await credit_service.calculate_book_cost(
+        pages=page_count, with_images=body.generate_images,
+        image_model=body.image_model if body.generate_images else None,
+    )
+    pricing_snapshot = await credit_service.get_pricing()
+    if body.generate_images and body.image_model in pricing_snapshot:
+        cost_per_page_key = body.image_model
+    elif body.generate_images:
+        cost_per_page_key = "page_with_images"
+    else:
+        cost_per_page_key = "page_without_images"
+    usage_log_id = await credit_service.reserve(
+        user_id=user_id,
+        amount=book_cost,
+        job_id=job_id,
+        job_type="book",
+        description=f"Book: {body.title or 'Untitled'} ({page_count} pages{', with images' if body.generate_images else ''})",
+        metadata={
+            "title": body.title,
+            "pages": page_count,
+            "with_images": body.generate_images,
+            "cost_per_page": float(pricing_snapshot.get(cost_per_page_key, 0)),
+            "total_cost": float(book_cost),
+            "pricing_snapshot": {k: float(v) for k, v in pricing_snapshot.items()},
+        },
+    )
 
     # Create job in database — release reserved credits if this fails
     try:
@@ -234,16 +221,16 @@ async def get_image_status(
         )
 
     all_images = await repo.get_images_for_book(db, uuid.UUID(job_id))
-    failed_images = await repo.get_failed_images_for_book(db, uuid.UUID(job_id))
+    failed = [img for img in all_images if img.status == "failed"]
 
     return BookImageStatusResponse(
         job_id=job_id,
         total_images=len(all_images),
-        failed_images=len(failed_images),
-        has_failed_images=len(failed_images) > 0,
+        failed_images=len(failed),
+        has_failed_images=len(failed) > 0,
         failed_pages=[
             FailedImageItem(page_number=img.page_number, error=img.error)
-            for img in failed_images
+            for img in failed
         ],
     )
 
@@ -337,7 +324,7 @@ async def get_job_status(
 )
 async def download_book(
     job_id: str,
-    pdf_type: str,
+    pdf_type: Literal["booklet", "review"],
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
@@ -356,20 +343,12 @@ async def download_book(
             detail=f"Book not ready. Current status: {job.status}",
         )
 
-    if pdf_type == "booklet":
-        filename = job.booklet_filename
-    elif pdf_type == "review":
-        filename = job.review_filename
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid pdf_type. Use 'booklet' or 'review'",
-        )
+    filename = job.booklet_filename if pdf_type == "booklet" else job.review_filename
 
     if not filename:
         raise HTTPException(status_code=404, detail="PDF file not found")
 
-    r2_key = f"pdfs/{job_id}/{filename}"
+    r2_key = build_pdf_r2_key(job_id, filename)
     storage = get_storage()
     presigned_url = await storage.generate_presigned_url(
         r2_key, expiration=3600, response_filename=filename
@@ -392,6 +371,7 @@ async def list_books(
     List all book generation jobs for the authenticated user.
     """
     jobs = await repo.list_book_jobs_for_user(db, user_id, limit=limit, offset=offset)
+    total_count = await repo.count_book_jobs_for_user(db, user_id)
     items = [
         BookListItem(
             job_id=str(j.id),
@@ -401,7 +381,7 @@ async def list_books(
         )
         for j in jobs
     ]
-    return BookListResponse(books=items, total=len(items))
+    return BookListResponse(books=items, total=total_count)
 
 
 @router.delete(

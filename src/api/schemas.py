@@ -48,6 +48,9 @@ END_TEXT_BY_LANGUAGE = {
 }
 
 
+_NAME_TO_CODE = {v.lower(): k for k, v in SUPPORTED_LANGUAGES.items()}
+
+
 class BookGenerateRequest(BaseModel):
     """Request schema for book generation."""
 
@@ -86,9 +89,7 @@ class BookGenerateRequest(BaseModel):
             if lang_key in END_TEXT_BY_LANGUAGE:
                 self.end_text = END_TEXT_BY_LANGUAGE[lang_key]
             else:
-                # Map full name to code: "english" -> "en"
-                name_to_code = {v.lower(): k for k, v in SUPPORTED_LANGUAGES.items()}
-                code = name_to_code.get(lang_key)
+                code = _NAME_TO_CODE.get(lang_key)
                 self.end_text = END_TEXT_BY_LANGUAGE.get(code, "The End") if code else "The End"
         return self
 
@@ -96,14 +97,18 @@ class BookGenerateRequest(BaseModel):
     def validate_text_on_image_language(self):
         if self.text_on_image:
             lang_key = self.language.lower().strip()
-            # Check if it's a code or full name
-            name_to_code = {v.lower(): k for k, v in SUPPORTED_LANGUAGES.items()}
-            code = lang_key if lang_key in SUPPORTED_LANGUAGES else name_to_code.get(lang_key)
+            code = lang_key if lang_key in SUPPORTED_LANGUAGES else _NAME_TO_CODE.get(lang_key)
             if code and code not in TEXT_ON_IMAGE_SUPPORTED_LANGUAGES:
                 raise ValueError(
                     f"Text on image is not supported for language '{self.language}'. "
                     f"Supported languages: {', '.join(TEXT_ON_IMAGE_SUPPORTED_LANGUAGES)}"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def validate_age_range(self):
+        if self.age_min > self.age_max:
+            raise ValueError("age_min must be less than or equal to age_max")
         return self
 
     model_config = {
@@ -265,6 +270,12 @@ class StoryCreateRequest(BaseModel):
     language: str = Field("English", description="Story language")
     author: str = Field("TaleHop Stories", description="Author name for book generation")
 
+    @model_validator(mode="after")
+    def validate_age_range(self):
+        if self.age_min > self.age_max:
+            raise ValueError("age_min must be less than or equal to age_max")
+        return self
+
     model_config = {
         "json_schema_extra": {
             "examples": [
@@ -328,6 +339,12 @@ class StoryValidateRequest(BaseModel):
     age_min: int = Field(2, ge=1, le=10, description="Minimum target age")
     age_max: int = Field(4, ge=1, le=10, description="Maximum target age")
 
+    @model_validator(mode="after")
+    def validate_age_range(self):
+        if self.age_min > self.age_max:
+            raise ValueError("age_min must be less than or equal to age_max")
+        return self
+
     model_config = {
         "json_schema_extra": {
             "examples": [
@@ -377,6 +394,12 @@ class StoryResplitRequest(BaseModel):
     )
     age_min: int = Field(2, ge=1, le=10, description="Minimum target age")
     age_max: int = Field(4, ge=1, le=10, description="Maximum target age")
+
+    @model_validator(mode="after")
+    def validate_age_range(self):
+        if self.age_min > self.age_max:
+            raise ValueError("age_min must be less than or equal to age_max")
+        return self
 
     model_config = {
         "json_schema_extra": {

@@ -5,7 +5,6 @@ Extracted from src/api/routes/books.py to keep route handlers thin.
 """
 
 import asyncio
-import hashlib
 import logging
 import tempfile
 import uuid
@@ -13,19 +12,106 @@ from datetime import datetime
 from pathlib import Path
 
 from src.api.schemas import BookGenerateRequest
-from src.core.config import LLMConfig
+from src.core.config import LLMConfig, DEFAULT_MAX_SENTENCES_PER_PAGE, DEFAULT_MAX_CHARS_PER_PAGE
+from src.core.image_generator import BookImageGenerator as _BIG
 from src.core.llm_connector import analyze_story_for_visuals
 from src.core.text_processor import TextProcessor, validate_book_content
 from src.core.pdf_generator import generate_both_pdfs
-from src.core.storage import get_storage
+from src.core.storage import get_storage, build_image_r2_key, build_pdf_r2_key
 from src.db.engine import get_session_factory
 from src.db import repository as repo
 from src.services.credit_service import CreditService
+from src.tasks._common import safe_release_credits
 
 
 logger = logging.getLogger(__name__)
 
 TASK_TIMEOUT_SECONDS = 1200  # 20 minutes
+
+
+def _build_book_content(request: BookGenerateRequest, job_id: str = ""):
+    """Build BookContent from a request. Used by both generate and regenerate."""
+    processor = TextProcessor(
+        max_sentences_per_page=DEFAULT_MAX_SENTENCES_PER_PAGE,
+        max_chars_per_page=DEFAULT_MAX_CHARS_PER_PAGE,
+        end_page_text=request.end_text,
+    )
+    if request.story_structured and request.story_structured.pages:
+        logger.info(f"[{job_id}] Using process_structured (structured JSON input)")
+        return processor.process_structured(
+            story_data=request.story_structured.model_dump(),
+            author=request.author,
+            language=request.language,
+            custom_title=request.title,
+        )
+    logger.info(f"[{job_id}] Using process_raw_story (text input)")
+    return processor.process_raw_story(
+        story=request.story,
+        title=request.title or "My Story",
+        author=request.author,
+        language=request.language,
+    )
+
+
+def _build_pdf_filenames(title: str) -> tuple[str, str]:
+    """Build sanitized booklet and review filenames from a title."""
+    safe_title = "".join(
+        c if c.isalnum() or c in " -_" else "_" for c in title
+    )
+    safe_title = safe_title.strip().replace(" ", "_")[:50]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return (
+        f"{safe_title}_{timestamp}_booklet.pdf",
+        f"{safe_title}_{timestamp}_review.pdf",
+    )
+
+
+async def _generate_and_upload_pdfs(
+    job_id: str, book_content, request: BookGenerateRequest,
+    images: dict | None, storage,
+) -> tuple[str, str, int, int]:
+    """Generate both PDFs, upload to R2, and return (booklet_filename, review_filename, booklet_size, review_size)."""
+    booklet_filename, review_filename = _build_pdf_filenames(book_content.title)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        booklet_path = str(Path(tmp_dir) / booklet_filename)
+        review_path = str(Path(tmp_dir) / review_filename)
+        await asyncio.to_thread(
+            generate_both_pdfs,
+            content=book_content,
+            booklet_path=booklet_path,
+            review_path=review_path,
+            config=request,
+            images=images,
+        )
+        booklet_r2_key = build_pdf_r2_key(job_id, booklet_filename)
+        review_r2_key = build_pdf_r2_key(job_id, review_filename)
+        booklet_size, review_size = await asyncio.gather(
+            storage.upload_file(booklet_path, booklet_r2_key, "application/pdf"),
+            storage.upload_file(review_path, review_r2_key, "application/pdf"),
+        )
+    return booklet_filename, review_filename, booklet_size, review_size
+
+
+async def _store_pdf_metadata(
+    session, job_id: str, user_id: uuid.UUID,
+    book_content, booklet_filename: str, review_filename: str,
+    booklet_size: int, review_size: int,
+) -> None:
+    """Create DB records for both generated PDFs."""
+    for pdf_type, filename, size in [
+        ("booklet", booklet_filename, booklet_size),
+        ("review", review_filename, review_size),
+    ]:
+        await repo.create_generated_pdf(
+            session,
+            book_job_id=uuid.UUID(job_id),
+            user_id=user_id,
+            pdf_type=pdf_type,
+            filename=filename,
+            file_path=build_pdf_r2_key(job_id, filename),
+            page_count=book_content.total_pages,
+            file_size_bytes=size,
+        )
 
 
 async def _generate_book_inner(
@@ -50,28 +136,7 @@ async def _generate_book_inner(
         session, uuid.UUID(job_id),
         progress="Processing text into pages...",
     )
-    processor = TextProcessor(
-        max_sentences_per_page=2,
-        max_chars_per_page=100,
-        end_page_text=request.end_text,
-    )
-
-    if request.story_structured and request.story_structured.pages:
-        logger.info(f"[{job_id}] Using process_structured (structured JSON input)")
-        book_content = processor.process_structured(
-            story_data=request.story_structured.model_dump(),
-            author=request.author,
-            language=request.language,
-            custom_title=request.title,
-        )
-    else:
-        logger.info(f"[{job_id}] Using process_raw_story (text input)")
-        book_content = processor.process_raw_story(
-            story=story_text,
-            title=request.title or "My Story",
-            author=request.author,
-            language=request.language,
-        )
+    book_content = _build_book_content(request, job_id)
 
     await repo.update_book_job(
         session, uuid.UUID(job_id),
@@ -141,43 +206,41 @@ async def _generate_book_inner(
                 async with session_factory() as cache_session:
                     return await repo.find_cached_image_by_hash(cache_session, prompt_hash)
 
-            image_generator = BookImageGenerator(
+            async with BookImageGenerator(
                 image_config,
                 request,
                 visual_context,
                 storage=storage,
                 book_job_id=job_id,
                 cache_check_fn=cache_check_fn,
-            )
-
-            page_data = [
-                {
-                    "page_number": p.page_number,
-                    "content": p.content,
-                    "page_type": p.page_type.value,
-                }
-                for p in book_content.pages
-            ]
-
-            story_context = " ".join(
-                [
-                    p.content
+            ) as image_generator:
+                page_data = [
+                    {
+                        "page_number": p.page_number,
+                        "content": p.content,
+                        "page_type": p.page_type.value,
+                    }
                     for p in book_content.pages
-                    if p.page_type.value == "content"
-                ][:3]
-            )
+                ]
 
-            logger.info(f"[{job_id}] Calling generate_all_images with {len(page_data)} pages")
-            image_results = await image_generator.generate_all_images(
-                pages=page_data,
-                story_context=story_context,
-            )
-            # Create DB rows for generated images
+                story_context = " ".join(
+                    [
+                        p.content
+                        for p in book_content.pages
+                        if p.page_type.value == "content"
+                    ][:3]
+                )
+
+                logger.info(f"[{job_id}] Calling generate_all_images with {len(page_data)} pages")
+                image_results = await image_generator.generate_all_images(
+                    pages=page_data,
+                    story_context=story_context,
+                )
+
+            # Create DB rows for generated images (outside context manager — generator no longer needed)
             images = {}
             for page_num, result in image_results.items():
-                prompt_hash = hashlib.md5(
-                    (result.prompt_used or "").encode()
-                ).hexdigest()
+                prompt_hash = _BIG.compute_prompt_hash(result.prompt_used or "")
                 file_size = len(result.image_data) if result.image_data else None
 
                 # NOTE: For cache hits, r2_key may reference another book's
@@ -212,59 +275,14 @@ async def _generate_book_inner(
         progress="Generating PDF files...",
     )
 
-    # Generate filenames
-    safe_title = "".join(
-        c if c.isalnum() or c in " -_" else "_" for c in book_content.title
+    booklet_filename, review_filename, booklet_size, review_size = (
+        await _generate_and_upload_pdfs(job_id, book_content, request, images, storage)
     )
-    safe_title = safe_title.strip().replace(" ", "_")[:50]
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    logger.info(f"[{job_id}] PDFs uploaded to R2")
 
-    booklet_filename = f"{safe_title}_{timestamp}_booklet.pdf"
-    review_filename = f"{safe_title}_{timestamp}_review.pdf"
-
-    # Generate PDFs in a temp directory, then upload to R2
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        booklet_path = str(Path(tmp_dir) / booklet_filename)
-        review_path = str(Path(tmp_dir) / review_filename)
-
-        await asyncio.to_thread(
-            generate_both_pdfs,
-            content=book_content,
-            booklet_path=booklet_path,
-            review_path=review_path,
-            config=request,
-            images=images,
-        )
-        # Upload to R2
-        booklet_r2_key = f"pdfs/{job_id}/{booklet_filename}"
-        review_r2_key = f"pdfs/{job_id}/{review_filename}"
-
-        booklet_size, review_size = await asyncio.gather(
-            storage.upload_file(booklet_path, booklet_r2_key, "application/pdf"),
-            storage.upload_file(review_path, review_r2_key, "application/pdf"),
-        )
-        logger.info(f"[{job_id}] PDFs uploaded to R2")
-
-    # Store PDF metadata with R2 keys
-    await repo.create_generated_pdf(
-        session,
-        book_job_id=uuid.UUID(job_id),
-        user_id=user_id,
-        pdf_type="booklet",
-        filename=booklet_filename,
-        file_path=booklet_r2_key,
-        page_count=book_content.total_pages,
-        file_size_bytes=booklet_size,
-    )
-    await repo.create_generated_pdf(
-        session,
-        book_job_id=uuid.UUID(job_id),
-        user_id=user_id,
-        pdf_type="review",
-        filename=review_filename,
-        file_path=review_r2_key,
-        page_count=book_content.total_pages,
-        file_size_bytes=review_size,
+    await _store_pdf_metadata(
+        session, job_id, user_id, book_content,
+        booklet_filename, review_filename, booklet_size, review_size,
     )
 
     # Update job status
@@ -321,15 +339,7 @@ async def generate_book_task(
                         progress="Failed: generation timed out",
                     )
                     if usage_log_id:
-                        try:
-                            credit_service = CreditService(err_session)
-                            await credit_service.release(usage_log_id, user_id)
-                            logger.info(f"[{job_id}] Credits released after timeout")
-                        except Exception as release_err:
-                            logger.error(
-                                f"[{job_id}] Failed to release credits: usage_log={usage_log_id}, user={user_id}, error={release_err}",
-                                exc_info=True,
-                            )
+                        await safe_release_credits(err_session, usage_log_id, user_id, job_id)
             except Exception as err_exc:
                 logger.error(
                     f"[{job_id}] Could not record timeout failure: {err_exc}",
@@ -337,10 +347,6 @@ async def generate_book_task(
                 )
         except Exception as e:
             logger.error(f"[{job_id}] Book generation failed: {str(e)}", exc_info=True)
-            # Use a fresh session to record the failure — the original
-            # session may be in a broken state (e.g. after a concurrent
-            # operation error), which would prevent updating the job and
-            # leave it stuck in "processing" forever.
             try:
                 async with session_factory() as err_session:
                     await repo.update_book_job(
@@ -349,17 +355,8 @@ async def generate_book_task(
                         error=str(e),
                         progress=f"Failed: {str(e)}",
                     )
-                    # Release reserved credits with fresh session
                     if usage_log_id:
-                        try:
-                            credit_service = CreditService(err_session)
-                            await credit_service.release(usage_log_id, user_id)
-                            logger.info(f"[{job_id}] Credits released after failure")
-                        except Exception as release_err:
-                            logger.error(
-                                f"[{job_id}] Failed to release credits: usage_log={usage_log_id}, user={user_id}, error={release_err}",
-                                exc_info=True,
-                            )
+                        await safe_release_credits(err_session, usage_log_id, user_id, job_id)
             except Exception as err_exc:
                 logger.error(
                     f"[{job_id}] Could not record failure status: {err_exc}",
@@ -382,8 +379,8 @@ async def _regenerate_book_inner(
     from src.core.retry import async_retry
     from src.core.config import DEFAULT_IMAGE_MODEL
 
-    # Retry each failed image — each may use a different model
-    for img in failed_images:
+    # Retry failed images concurrently (each gets own session + generator)
+    async def _retry_one(img):
         image_id = img.id
         prompt = img.prompt
         page_number = img.page_number
@@ -396,39 +393,41 @@ async def _regenerate_book_inner(
         generator = OpenRouterImageGenerator(image_config)
 
         @async_retry(max_attempts=3, backoff_base=2.0)
-        async def generate_with_retry(prompt: str) -> GenImg:
-            result = await generator.generate(prompt)
+        async def generate_with_retry(p: str) -> GenImg:
+            result = await generator.generate(p)
             if not result.success:
                 raise ImageGenerationError(result.error or "Unknown error")
             return result
 
-        await repo.reset_image_for_retry(session, image_id, retry_attempt)
+        async with session_factory() as retry_session:
+            await repo.reset_image_for_retry(retry_session, image_id, retry_attempt)
 
-        try:
-            result = await generate_with_retry(prompt)
-            # Upload to R2
-            r2_key = f"images/{job_id}/page_{page_number}.png"
-            await storage.upload_bytes(result.image_data, r2_key, "image/png")
-            file_size = len(result.image_data) if result.image_data else None
+            try:
+                result = await generate_with_retry(prompt)
+                r2_key = build_image_r2_key(job_id, page_number)
+                await storage.upload_bytes(result.image_data, r2_key, "image/png")
+                file_size = len(result.image_data) if result.image_data else None
 
-            await repo.update_generated_image(
-                session, image_id,
-                status="completed",
-                r2_key=r2_key,
-                file_size_bytes=file_size,
-                error=None,
-            )
-            logger.info(f"[{job_id}] Page {page_number} retry succeeded")
+                await repo.update_generated_image(
+                    retry_session, image_id,
+                    status="completed",
+                    r2_key=r2_key,
+                    file_size_bytes=file_size,
+                    error=None,
+                )
+                logger.info(f"[{job_id}] Page {page_number} retry succeeded")
 
-        except ImageGenerationError as e:
-            await repo.update_generated_image(
-                session, image_id,
-                status="failed",
-                error=str(e),
-            )
-            logger.warning(f"[{job_id}] Page {page_number} retry failed: {e}")
-        finally:
-            await generator.close()
+            except ImageGenerationError as e:
+                await repo.update_generated_image(
+                    retry_session, image_id,
+                    status="failed",
+                    error=str(e),
+                )
+                logger.warning(f"[{job_id}] Page {page_number} retry failed: {e}")
+            finally:
+                await generator.close()
+
+    await asyncio.gather(*[_retry_one(img) for img in failed_images])
 
     # Regenerate PDFs with all successful images
     await repo.update_book_job(
@@ -442,93 +441,29 @@ async def _regenerate_book_inner(
         raise RuntimeError("Cannot regenerate: job or request_params missing")
 
     request = BookGenerateRequest(**job.request_params)
+    book_content = _build_book_content(request, job_id)
 
-    # Process text into pages (same as original generation)
-    processor = TextProcessor(
-        max_sentences_per_page=2,
-        max_chars_per_page=100,
-        end_page_text=request.end_text,
-    )
-
-    if request.story_structured and request.story_structured.pages:
-        book_content = processor.process_structured(
-            story_data=request.story_structured.model_dump(),
-            author=request.author,
-            language=request.language,
-            custom_title=request.title,
-        )
-    else:
-        book_content = processor.process_raw_story(
-            story=request.story,
-            title=request.title or "My Story",
-            author=request.author,
-            language=request.language,
-        )
-
-    # Gather all successful images (original + retried)
+    # Gather all successful images concurrently (original + retried)
     all_images = await repo.get_images_for_book(session, uuid.UUID(job_id))
-    images: dict[int, bytes] = {}
-    for img_row in all_images:
-        if img_row.status == "completed" and img_row.r2_key:
-            image_data = await storage.download_bytes(img_row.r2_key)
-            if image_data:
-                images[img_row.page_number] = image_data
+    completed = [(img.page_number, img.r2_key) for img in all_images if img.status == "completed" and img.r2_key]
+    downloaded = await asyncio.gather(*[storage.download_bytes(r2_key) for _, r2_key in completed])
+    images: dict[int, bytes] = {
+        page_num: data for (page_num, _), data in zip(completed, downloaded) if data
+    }
 
     # Delete old PDFs from R2 and DB
     old_r2_keys = await repo.delete_pdfs_for_book(session, uuid.UUID(job_id))
-    for key in old_r2_keys:
-        await storage.delete(key)
+    if old_r2_keys:
+        await asyncio.gather(*[storage.delete(key) for key in old_r2_keys])
 
     # Generate new PDFs
-    safe_title = "".join(
-        c if c.isalnum() or c in " -_" else "_" for c in book_content.title
+    booklet_filename, review_filename, booklet_size, review_size = (
+        await _generate_and_upload_pdfs(job_id, book_content, request, images, storage)
     )
-    safe_title = safe_title.strip().replace(" ", "_")[:50]
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    booklet_filename = f"{safe_title}_{timestamp}_booklet.pdf"
-    review_filename = f"{safe_title}_{timestamp}_review.pdf"
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        booklet_path = str(Path(tmp_dir) / booklet_filename)
-        review_path = str(Path(tmp_dir) / review_filename)
-
-        await asyncio.to_thread(
-            generate_both_pdfs,
-            content=book_content,
-            booklet_path=booklet_path,
-            review_path=review_path,
-            config=request,
-            images=images,
-        )
-
-        booklet_r2_key = f"pdfs/{job_id}/{booklet_filename}"
-        review_r2_key = f"pdfs/{job_id}/{review_filename}"
-
-        booklet_size, review_size = await asyncio.gather(
-            storage.upload_file(booklet_path, booklet_r2_key, "application/pdf"),
-            storage.upload_file(review_path, review_r2_key, "application/pdf"),
-        )
-
-    await repo.create_generated_pdf(
-        session,
-        book_job_id=uuid.UUID(job_id),
-        user_id=user_id,
-        pdf_type="booklet",
-        filename=booklet_filename,
-        file_path=booklet_r2_key,
-        page_count=book_content.total_pages,
-        file_size_bytes=booklet_size,
-    )
-    await repo.create_generated_pdf(
-        session,
-        book_job_id=uuid.UUID(job_id),
-        user_id=user_id,
-        pdf_type="review",
-        filename=review_filename,
-        file_path=review_r2_key,
-        page_count=book_content.total_pages,
-        file_size_bytes=review_size,
+    await _store_pdf_metadata(
+        session, job_id, user_id, book_content,
+        booklet_filename, review_filename, booklet_size, review_size,
     )
 
     await repo.update_book_job(

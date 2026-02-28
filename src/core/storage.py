@@ -19,6 +19,16 @@ logger = logging.getLogger(__name__)
 _storage: Optional["R2Storage"] = None
 
 
+def build_image_r2_key(job_id: str, page_number: int) -> str:
+    """Build the R2 key for a generated image."""
+    return f"images/{job_id}/page_{page_number}.png"
+
+
+def build_pdf_r2_key(job_id: str, filename: str) -> str:
+    """Build the R2 key for a generated PDF."""
+    return f"pdfs/{job_id}/{filename}"
+
+
 class R2Storage:
     """Async wrapper around Cloudflare R2 (S3-compatible) using aioboto3."""
 

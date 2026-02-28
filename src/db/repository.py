@@ -337,6 +337,19 @@ async def count_completed_books_for_user(
     return result.scalar_one()
 
 
+async def count_book_jobs_for_user(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+) -> int:
+    """Count total book jobs for a user (for accurate pagination)."""
+    result = await session.execute(
+        select(func.count())
+        .select_from(BookJob)
+        .where(BookJob.user_id == user_id)
+    )
+    return result.scalar_one()
+
+
 async def reset_image_for_retry(
     session: AsyncSession,
     image_id: uuid.UUID,

@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 from src.core.config import DEFAULT_IMAGE_MODEL
 from src.core.retry import async_retry
+from src.core.storage import build_image_r2_key
 
 if TYPE_CHECKING:
     from src.api.schemas import BookGenerateRequest
@@ -368,7 +369,7 @@ class BookImageGenerator:
 
         Returns None on failure (image_data is still usable in memory for PDF).
         """
-        key = f"images/{self.book_job_id}/page_{page_number}.png"
+        key = build_image_r2_key(self.book_job_id, page_number)
         try:
             await self.storage.upload_bytes(image_data, key, "image/png")
             return key
@@ -451,7 +452,7 @@ class BookImageGenerator:
         self,
         pages: List[Dict[str, Any]],
         story_context: str = "",
-        progress_callback: Optional[callable] = None,
+        progress_callback: Optional[Callable] = None,
         max_concurrent: int = 5,
     ) -> Dict[int, GeneratedImage]:
         """Generate images for all pages with controlled concurrency.

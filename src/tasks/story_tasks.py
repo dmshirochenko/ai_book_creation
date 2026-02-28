@@ -13,6 +13,7 @@ from src.core.story_generator import StoryGenerator
 from src.db.engine import get_session_factory
 from src.db import repository as repo
 from src.services.credit_service import CreditService
+from src.tasks._common import safe_release_credits
 
 
 logger = logging.getLogger(__name__)
@@ -50,17 +51,8 @@ async def create_story_task(
                     status="failed",
                     error="OpenRouter API key not configured. Set OPENROUTER_API_KEY in .env file.",
                 )
-                # Release reserved credits
                 if usage_log_id:
-                    try:
-                        credit_service = CreditService(session)
-                        await credit_service.release(usage_log_id, user_id)
-                        logger.info(f"[{job_id}] Credits released: usage_log={usage_log_id}")
-                    except Exception as release_err:
-                        logger.error(
-                            f"[{job_id}] Failed to release credits: usage_log={usage_log_id}, user={user_id}, error={release_err}",
-                            exc_info=True,
-                        )
+                    await safe_release_credits(session, usage_log_id, user_id, job_id)
                 return
 
             # Increase max_tokens for story generation (stories need more space than adaptation)
@@ -72,16 +64,17 @@ async def create_story_task(
                 progress="Generating your story...",
             )
             generator = StoryGenerator(llm_config)
-
-            # Generate story
-            result = await generator.generate_story(
-                user_prompt=request.prompt,
-                age_min=request.age_min,
-                age_max=request.age_max,
-                tone=request.tone,
-                length=request.length,
-                language=request.language,
-            )
+            try:
+                result = await generator.generate_story(
+                    user_prompt=request.prompt,
+                    age_min=request.age_min,
+                    age_max=request.age_max,
+                    tone=request.tone,
+                    length=request.length,
+                    language=request.language,
+                )
+            finally:
+                await generator.close()
 
             if not result.success:
                 logger.warning(f"[{job_id}] Story generation failed: {result.error}")
@@ -93,17 +86,8 @@ async def create_story_task(
                     safety_status=result.safety_status,
                     safety_reasoning=result.safety_reasoning,
                 )
-                # Release reserved credits
                 if usage_log_id:
-                    try:
-                        credit_service = CreditService(session)
-                        await credit_service.release(usage_log_id, user_id)
-                        logger.info(f"[{job_id}] Credits released: usage_log={usage_log_id}")
-                    except Exception as release_err:
-                        logger.error(
-                            f"[{job_id}] Failed to release credits: usage_log={usage_log_id}, user={user_id}, error={release_err}",
-                            exc_info=True,
-                        )
+                    await safe_release_credits(session, usage_log_id, user_id, job_id)
                 return
 
             # Success - store results
@@ -137,16 +121,7 @@ async def create_story_task(
                         err_session, uuid.UUID(job_id),
                         status="failed", error=str(e), progress=f"Failed: {str(e)}",
                     )
-                    # Release reserved credits with fresh session
                     if usage_log_id:
-                        try:
-                            credit_service = CreditService(err_session)
-                            await credit_service.release(usage_log_id, user_id)
-                            logger.info(f"[{job_id}] Credits released after failure")
-                        except Exception as release_err:
-                            logger.error(
-                                f"[{job_id}] Failed to release credits: usage_log={usage_log_id}, user={user_id}, error={release_err}",
-                                exc_info=True,
-                            )
+                        await safe_release_credits(err_session, usage_log_id, user_id, job_id)
             except Exception as err_exc:
                 logger.error(f"[{job_id}] Could not record failure: {err_exc}", exc_info=True)

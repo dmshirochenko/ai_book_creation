@@ -39,17 +39,14 @@ class TestOpenRouterClientCallLLM:
         }
 
         mock_response = _mock_httpx_response(response_data)
-        with patch("src.core.llm_connector.httpx.AsyncClient") as mock_client_cls:
-            mock_instance = AsyncMock()
-            mock_instance.post.return_value = mock_response
-            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-            mock_instance.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_instance
+        mock_http = AsyncMock()
+        mock_http.post.return_value = mock_response
+        client._client = mock_http
 
-            result = await client._call_llm("test prompt")
-            assert result.success is True
-            assert result.content == "Hello world"
-            assert result.tokens_used == 42
+        result = await client._call_llm("test prompt")
+        assert result.success is True
+        assert result.content == "Hello world"
+        assert result.tokens_used == 42
 
     async def test_no_api_key(self):
         config = LLMConfig(api_key="")
@@ -60,28 +57,22 @@ class TestOpenRouterClientCallLLM:
 
     async def test_http_error(self, client):
         mock_response = _mock_httpx_response({"error": "bad"}, status_code=500)
-        with patch("src.core.llm_connector.httpx.AsyncClient") as mock_client_cls:
-            mock_instance = AsyncMock()
-            mock_instance.post.return_value = mock_response
-            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-            mock_instance.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_instance
+        mock_http = AsyncMock()
+        mock_http.post.return_value = mock_response
+        client._client = mock_http
 
-            result = await client._call_llm("test")
-            assert result.success is False
-            assert "API error" in result.error
+        result = await client._call_llm("test")
+        assert result.success is False
+        assert "API error" in result.error
 
     async def test_request_error(self, client):
-        with patch("src.core.llm_connector.httpx.AsyncClient") as mock_client_cls:
-            mock_instance = AsyncMock()
-            mock_instance.post.side_effect = httpx.RequestError("connection failed")
-            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-            mock_instance.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_instance
+        mock_http = AsyncMock()
+        mock_http.post.side_effect = httpx.RequestError("connection failed")
+        client._client = mock_http
 
-            result = await client._call_llm("test")
-            assert result.success is False
-            assert "Request failed" in result.error
+        result = await client._call_llm("test")
+        assert result.success is False
+        assert "Request failed" in result.error
 
     async def test_response_format_passed(self, client):
         response_data = {
@@ -89,18 +80,15 @@ class TestOpenRouterClientCallLLM:
             "usage": {"total_tokens": 10},
         }
         mock_response = _mock_httpx_response(response_data)
-        with patch("src.core.llm_connector.httpx.AsyncClient") as mock_client_cls:
-            mock_instance = AsyncMock()
-            mock_instance.post.return_value = mock_response
-            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-            mock_instance.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_instance
+        mock_http = AsyncMock()
+        mock_http.post.return_value = mock_response
+        client._client = mock_http
 
-            fmt = {"type": "json_schema", "json_schema": {"name": "test"}}
-            await client._call_llm("test", response_format=fmt)
-            call_kwargs = mock_instance.post.call_args
-            payload = call_kwargs.kwargs["json"]
-            assert payload["response_format"] == fmt
+        fmt = {"type": "json_schema", "json_schema": {"name": "test"}}
+        await client._call_llm("test", response_format=fmt)
+        call_kwargs = mock_http.post.call_args
+        payload = call_kwargs.kwargs["json"]
+        assert payload["response_format"] == fmt
 
 
 class TestOpenRouterClientAnalyzeStory:
@@ -117,29 +105,23 @@ class TestOpenRouterClientAnalyzeStory:
             "usage": {"total_tokens": 100},
         }
         mock_response = _mock_httpx_response(response_data)
-        with patch("src.core.llm_connector.httpx.AsyncClient") as mock_client_cls:
-            mock_instance = AsyncMock()
-            mock_instance.post.return_value = mock_response
-            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-            mock_instance.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_instance
+        mock_http = AsyncMock()
+        mock_http.post.return_value = mock_response
+        client._client = mock_http
 
-            ctx, resp = await client.analyze_story("A fox in the forest")
-            assert resp.success is True
-            assert len(ctx.characters) == 1
-            assert ctx.setting == "Forest"
+        ctx, resp = await client.analyze_story("A fox in the forest")
+        assert resp.success is True
+        assert len(ctx.characters) == 1
+        assert ctx.setting == "Forest"
 
     async def test_failed_analysis_returns_empty_context(self, client):
-        with patch("src.core.llm_connector.httpx.AsyncClient") as mock_client_cls:
-            mock_instance = AsyncMock()
-            mock_instance.post.side_effect = httpx.RequestError("fail")
-            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-            mock_instance.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_instance
+        mock_http = AsyncMock()
+        mock_http.post.side_effect = httpx.RequestError("fail")
+        client._client = mock_http
 
-            ctx, resp = await client.analyze_story("test")
-            assert resp.success is False
-            assert ctx.is_empty()
+        ctx, resp = await client.analyze_story("test")
+        assert resp.success is False
+        assert ctx.is_empty()
 
 
 class TestAnalyzeStoryForVisuals:
@@ -160,8 +142,7 @@ class TestAnalyzeStoryForVisuals:
         with patch("src.core.llm_connector.httpx.AsyncClient") as mock_client_cls:
             mock_instance = AsyncMock()
             mock_instance.post.return_value = mock_response
-            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-            mock_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_instance.aclose = AsyncMock()
             mock_client_cls.return_value = mock_instance
 
             ctx, resp = await analyze_story_for_visuals("test story", config)

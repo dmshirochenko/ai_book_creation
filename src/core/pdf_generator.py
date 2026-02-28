@@ -16,7 +16,6 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict, TYPE_CHECKING
 from dataclasses import dataclass
-import hashlib
 
 import logging
 

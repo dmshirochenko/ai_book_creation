@@ -28,7 +28,7 @@ from src.core.config import LLMConfig
 from src.core.story_generator import StoryGenerator
 from src.db import repository as repo
 from src.tasks.story_tasks import create_story_task
-from src.services.credit_service import CreditService, InsufficientCreditsError
+from src.services.credit_service import CreditService
 from src.api.rate_limit import limiter
 
 
@@ -76,40 +76,24 @@ async def create_story(
     if not body.prompt.strip():
         raise HTTPException(status_code=400, detail="Story prompt cannot be empty")
 
-    if body.age_min > body.age_max:
-        raise HTTPException(
-            status_code=400,
-            detail="age_min must be less than or equal to age_max",
-        )
-
     job_id = uuid.uuid4()
 
-    # Reserve credits
+    # Reserve credits (InsufficientCreditsError handled by app-level exception handler)
     credit_service = CreditService(db)
-    try:
-        story_cost = await credit_service.calculate_story_cost()
-        pricing_snapshot = await credit_service.get_pricing()
-        usage_log_id = await credit_service.reserve(
-            user_id=user_id,
-            amount=story_cost,
-            job_id=job_id,
-            job_type="story",
-            description="Story generation",
-            metadata={
-                "prompt": body.prompt[:100],
-                "total_cost": float(story_cost),
-                "pricing_snapshot": {k: float(v) for k, v in pricing_snapshot.items()},
-            },
-        )
-    except InsufficientCreditsError as e:
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "message": "Insufficient credits",
-                "balance": float(e.balance),
-                "required": float(e.required),
-            },
-        )
+    story_cost = await credit_service.calculate_story_cost()
+    pricing_snapshot = await credit_service.get_pricing()
+    usage_log_id = await credit_service.reserve(
+        user_id=user_id,
+        amount=story_cost,
+        job_id=job_id,
+        job_type="story",
+        description="Story generation",
+        metadata={
+            "prompt": body.prompt[:100],
+            "total_cost": float(story_cost),
+            "pricing_snapshot": {k: float(v) for k, v in pricing_snapshot.items()},
+        },
+    )
 
     # Create job in database — release reserved credits if this fails
     try:
@@ -154,12 +138,6 @@ async def validate_story(
     - `status: "pass"` -- story is appropriate, proceed to next step
     - `status: "fail"` -- story has issues, show `reasoning` to the user
     """
-    if request.age_min > request.age_max:
-        raise HTTPException(
-            status_code=400,
-            detail="age_min must be less than or equal to age_max",
-        )
-
     try:
         llm_config = LLMConfig()
         if not llm_config.validate():
@@ -172,13 +150,13 @@ async def validate_story(
         llm_config.max_tokens = 500
         llm_config.temperature = 0.3  # More deterministic for validation
 
-        generator = StoryGenerator(llm_config)
-        result = await generator.validate_story(
-            title=request.title,
-            story_text=request.story_text,
-            age_min=request.age_min,
-            age_max=request.age_max,
-        )
+        async with StoryGenerator(llm_config) as generator:
+            result = await generator.validate_story(
+                title=request.title,
+                story_text=request.story_text,
+                age_min=request.age_min,
+                age_max=request.age_max,
+            )
 
         return StoryValidateResponse(
             status=result.status,
@@ -222,12 +200,6 @@ async def resplit_story(
     the same format expected by the book generation endpoint's
     `story_structured` field.
     """
-    if request.age_min > request.age_max:
-        raise HTTPException(
-            status_code=400,
-            detail="age_min must be less than or equal to age_max",
-        )
-
     try:
         llm_config = LLMConfig()
         if not llm_config.validate():
@@ -240,13 +212,13 @@ async def resplit_story(
         llm_config.max_tokens = 2000
         llm_config.temperature = 0.3  # Deterministic splitting
 
-        generator = StoryGenerator(llm_config)
-        result = await generator.resplit_story(
-            title=request.title,
-            story_text=request.story_text,
-            age_min=request.age_min,
-            age_max=request.age_max,
-        )
+        async with StoryGenerator(llm_config) as generator:
+            result = await generator.resplit_story(
+                title=request.title,
+                story_text=request.story_text,
+                age_min=request.age_min,
+                age_max=request.age_max,
+            )
 
         if not result.success:
             raise HTTPException(
