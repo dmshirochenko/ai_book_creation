@@ -8,7 +8,7 @@ from typing import Optional
 from sqlalchemy import select, update, delete, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import BookJob, StoryJob, GeneratedPdf, GeneratedImage
+from src.db.models import BookJob, StoryJob, GeneratedPdf, GeneratedImage, IllustrationStyle
 
 
 # ========================
@@ -374,3 +374,31 @@ async def delete_pdfs_for_book(
     )
     await session.commit()
     return r2_keys
+
+
+# ========================
+# ILLUSTRATION STYLES
+# ========================
+
+
+async def list_active_illustration_styles(
+    session: AsyncSession,
+) -> list[IllustrationStyle]:
+    result = await session.execute(
+        select(IllustrationStyle)
+        .where(IllustrationStyle.is_active.is_(True))
+        .order_by(IllustrationStyle.display_order)
+    )
+    return list(result.scalars().all())
+
+
+async def get_illustration_style_by_slug(
+    session: AsyncSession, slug: str
+) -> Optional[IllustrationStyle]:
+    result = await session.execute(
+        select(IllustrationStyle).where(
+            IllustrationStyle.slug == slug,
+            IllustrationStyle.is_active.is_(True),
+        )
+    )
+    return result.scalar_one_or_none()

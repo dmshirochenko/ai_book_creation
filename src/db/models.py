@@ -401,3 +401,35 @@ class CreditTransaction(Base):
             postgresql_where=text("stripe_session_id IS NOT NULL"),
         ),
     )
+
+
+class IllustrationStyle(Base):
+    """System-wide illustration style definitions for book generation."""
+    __tablename__ = "illustration_styles"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    slug: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    prompt_string: Mapped[str] = mapped_column(Text, nullable=False)
+    icon_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    preview_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("idx_illustration_styles_slug", "slug"),
+        Index("idx_illustration_styles_display_order", "display_order"),
+    )
