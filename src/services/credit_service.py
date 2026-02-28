@@ -80,6 +80,7 @@ class CreditService:
             CreditUsageLog.user_id == user_id,
             CreditUsageLog.created_at >= from_date,
             CreditUsageLog.created_at <= to_date,
+            CreditUsageLog.status.in_(["reserved", "confirmed"]),
         ]
 
         count_result = await self._session.execute(
