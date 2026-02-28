@@ -192,7 +192,7 @@ class OpenRouterImageGenerator:
                     "content": f"Generate an image: {prompt}"
                 }
             ],
-            "modalities": ["image", "text"],
+            "modalities": ["image"],
             # Request portrait aspect ratio for A5 page format
             "image_generation": {
                 "aspect_ratio": "3:4"  # Close to A5 (1:1.41), minimizes white space
