@@ -286,6 +286,7 @@ class CreditPricing(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     is_image_model: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -40,7 +40,9 @@ async def get_pricing(
 ) -> CreditPricingResponse:
     """Get current credit pricing for all operations."""
     result = await db.execute(
-        select(CreditPricing).where(CreditPricing.is_active.is_(True))
+        select(CreditPricing)
+        .where(CreditPricing.is_active.is_(True))
+        .order_by(CreditPricing.display_order)
     )
     rows = result.scalars().all()
     return CreditPricingResponse(
@@ -51,6 +53,7 @@ async def get_pricing(
                 description=r.description,
                 display_name=r.display_name,
                 is_image_model=r.is_image_model,
+                display_order=r.display_order,
             )
             for r in rows
         ]
